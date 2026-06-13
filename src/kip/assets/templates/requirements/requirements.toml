@@ -1,0 +1,22 @@
+[item]
+id = "OBJ-001"
+name = "Example object"
+kind = "component"
+revision = "A"
+
+[vars.P_design]
+value = 10
+unit = "kN"
+description = "Required tensile load"
+source = "REQ-001"
+
+[vars.sigma_allow]
+value = 100
+unit = "MPa"
+description = "Example allowable; replace with the applicable material basis"
+source = "REQ-001"
+
+[req.REQ-001]
+text = "The object shall sustain the design load with a non-negative margin of safety."
+verification = "analysis"
+controls = ["P_design", "sigma_allow"]

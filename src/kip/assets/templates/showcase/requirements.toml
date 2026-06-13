@@ -1,0 +1,42 @@
+[item]
+id = "LUG-001"
+name = "Lift Lug"
+kind = "component"
+revision = "B"
+
+[vars.sigma_y_min]
+value = 250.0
+unit = "MPa"
+description = "Minimum specified yield strength (ASTM A36)"
+source = "REQ-016"
+
+[vars.FS_yield]
+value = 1.67
+description = "Factor of safety against yield"
+source = "REQ-014"
+
+[req.REQ-014]
+text = "The lug shall sustain the factored design load with a positive margin of safety against yield."
+verification = "analysis"
+controls = ["P_design", "DF_min", "FS_yield"]
+
+[req.REQ-015]
+text = "Net-section tension shall not govern the design."
+verification = "analysis"
+
+[req.REQ-016]
+text = "Lug material shall meet the minimum specified yield strength."
+verification = "test"
+controls = ["sigma_y_min"]
+rationale = "Tensile coupons per ASTM E8."
+
+[vars.P_design]
+value = 18.0
+unit = "kN"
+description = "Design lift load"
+source = "REQ-014"
+
+[vars.DF_min]
+value = 2.0
+description = "Design load factor"
+source = "REQ-014"

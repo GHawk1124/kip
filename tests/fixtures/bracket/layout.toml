@@ -1,0 +1,83 @@
+# kip layout sidecar -- positions only.
+# Deleting this file reverts to flow layout.
+
+[page]
+paper = "us-letter"
+margin = "18mm"
+grid = true
+grid_step = "5mm"
+columns = 2
+gutter = "8mm"
+font_size = 10.0
+
+[block.intro]
+page = 1
+x = "20mm"
+y = "20mm"
+w = "83.95mm"
+
+[block.theory_note]
+page = 1
+x = "110mm"
+y = "20mm"
+w = "83.95mm"
+
+[block.theory]
+page = 1
+x = "110mm"
+y = "60mm"
+w = "83.95mm"
+
+[block.loads]
+page = 1
+x = "110mm"
+y = "90mm"
+w = "83.95mm"
+
+[block.geometry]
+page = 1
+x = "20mm"
+y = "95mm"
+w = "83.95mm"
+
+[block.material]
+page = 1
+x = "110mm"
+y = "120mm"
+w = "83.95mm"
+
+[block.section]
+page = 1
+x = "20mm"
+y = "125mm"
+w = "83.95mm"
+
+[block.moment]
+page = 1
+x = "110mm"
+y = "150mm"
+w = "83.95mm"
+
+[block.sizing]
+page = 1
+x = "110mm"
+y = "180mm"
+w = "83.95mm"
+
+[block.allowable]
+page = 1
+x = "20mm"
+y = "190mm"
+w = "83.95mm"
+
+[block.margin]
+page = 1
+x = "110mm"
+y = "220mm"
+w = "83.95mm"
+
+[block.conclusion]
+page = 2
+x = "20mm"
+y = "20mm"
+w = "83.95mm"

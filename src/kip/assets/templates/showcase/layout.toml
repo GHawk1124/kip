@@ -1,0 +1,20 @@
+# kip layout sidecar -- positions only.
+# Deleting this file reverts to flow layout.
+
+[page]
+title = "Lift Lug Stress Analysis"
+subtitle = "Single-plate lug for pressure-vessel skid, 18 kN static lift"
+paper = "us-letter"
+margin = "16mm"
+grid = true
+grid_step = "5mm"
+columns = 1
+font_size = 9.5
+marking = "CIPS Proprietary"
+project = "SKID-4471"
+document = "CALC-0112"
+client = "Northline Process"
+author = "G. Comes"
+checker = "A. Ruiz"
+revision = "B"
+date = "2026-09-13"
