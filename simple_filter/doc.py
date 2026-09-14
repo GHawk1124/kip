@@ -82,7 +82,7 @@ suppliers=Table(['Supplier / item', 'Catalog basis', 'Assessment'],[('GKD / Dutc
 '[insert text here]'
 
 
-# %% table fluidinputs "Water and geometry" 
+# %% table fluidinputs "Water and geometry"
 rho_w = C["rho_w"] * kg / m**3
 mu_w = C["mu_w"] * Pa * s
 d_face = C["active_d"] * mm
@@ -98,7 +98,7 @@ U_n = mdot_n / (rho_w * A_face)
 U_s = mdot_s / (rho_w * A_face)
 
 
-# %% symbolic flowmodel "Screen-specific resistance model" 
+# %% symbolic flowmodel "Screen-specific resistance model"
 Cv, Ci, visc, dens, velocity = sp.symbols("C_v C_i mu rho U", positive=True)
 dp_screen = Cv * visc * velocity + Ci * dens * velocity**2
 
@@ -115,7 +115,7 @@ dp_screen = Cv * visc * velocity + Ci * dens * velocity**2
 'Use the assumed values below for Dutch twill and the combined coarse pair. These are preliminary inputs, not measured supplier data. The viscous terms scale with viscosity and velocity; the inertial terms scale with density and velocity squared. Housing loss uses bore velocity: $Delta p_"body" = K_"body" rho V_"bore"^2 / 2$.'
 
 
-# %% table hyd_inputs "Coefficient definitions / constants workbook" 
+# %% table hyd_inputs "Coefficient definitions / constants workbook"
 C_vf = C["Cv_f"] / m
 C_if = C["Ci_f"]
 C_vc = C["Cv_c"] / m
@@ -143,7 +143,7 @@ DP_n = (C_vf + C_vc) * mu_w * U_n + (C_if + C_ic) * rho_w * U_n**2 + K_body * rh
 '[insert text here]\n\n$ Delta p_l = C_v mu U + C_i rho U^2 + mu U alpha_c m_d / A_f $'
 
 
-# %% given cakeinputs "Cake inputs / constants table" 
+# %% given cakeinputs "Cake inputs / constants table"
 alpha_c = C["alpha_c"] * m / kg
 m_d = C["dirt_mass"] * g
 
@@ -186,7 +186,7 @@ detail_b=asset('detail_circle.svg',175,72)
 '[insert text here]'
 
 
-# %% given mass_inputs "Density, sheet and cloth inputs / constants table" 
+# %% given mass_inputs "Density, sheet and cloth inputs / constants table"
 V_half = CAD["housing_volume_mm3"] * mm**3
 rho_ti = C["rho_ti"] * kg / m**3
 rho_ss = C["rho_ss"] * kg / m**3
@@ -221,5 +221,5 @@ MS_mass = m_limit / m_reserve - 1
 '[insert text here]'
 
 
-# %% sources references "References" 
+# %% sources references "References"
 refs = Sources(**{key: Source(**value) for key, value in SOURCE_DATA.items()})

@@ -58,5 +58,5 @@ code('mass_calc','Dry finished mass with a development reserve','m_dry = m_housi
 text('mass_scope','Mass scope')
 text('references_intro','24 / References',True)
 code('references','References','refs = Sources(**{key: Source(**value) for key, value in SOURCE_DATA.items()})',kind='sources')
-(ROOT/'doc.py').write_text('\n'.join(parts),encoding='utf-8')
+(ROOT/'doc.py').write_text('\n'.join(line.rstrip() for line in '\n'.join(parts).splitlines()).rstrip()+'\n',encoding='utf-8')
 print(f'Authored {len(parts)-1} simple-filter blocks')
