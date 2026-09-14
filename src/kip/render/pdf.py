@@ -193,6 +193,9 @@ def render(
     document's output tree.
     """
     root = doc.path.resolve().parent / "output"
+    if out_path is None:
+        from ..authoring import Report
+        out_path = next((v.output for v in doc.namespace.values() if isinstance(v, Report)), None)
     requested = Path(out_path) if out_path is not None else Path(f"{doc.path.resolve().parent.name or 'doc'}.pdf")
     p = (requested if requested.is_absolute() else root / requested).resolve()
     if not p.is_relative_to(root):

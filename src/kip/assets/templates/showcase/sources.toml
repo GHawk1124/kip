@@ -1,0 +1,21 @@
+[sources.shigley]
+title = "Shigley's Mechanical Engineering Design"
+author = "R. Budynas and K. Nisbett"
+publisher = "McGraw-Hill"
+year = 2020
+section = "Ch. 3-14"
+url = "https://www.mheducation.com/highered/product/M9781260113310.html"
+
+[sources.matweb]
+title = "ASTM A36 structural steel, material data sheet"
+publisher = "MatWeb"
+section = "Mechanical properties"
+url = "https://www.matweb.com/search/DataSheet.aspx?MatGUID=afc003f4fb40465fa3df05129f0e88e6"
+
+[sources.asme]
+title = "ASME BTH-1, Design of Below-the-Hook Lifting Devices"
+publisher = "ASME"
+year = 2023
+section = "Section 3-3.2"
+url = "https://www.asme.org/codes-standards/find-codes-standards/bth-1-design-below-hook-lifting-devices"
+note = "design factor basis"

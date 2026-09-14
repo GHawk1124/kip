@@ -19,6 +19,7 @@ handcalcs.set_option("preferred_string_formatter", "~L")
 # One input per line; handcalcs' default of 3 columns runs values together when
 # rendered through mitex.
 handcalcs.set_option("param_columns", 1)
+handcalcs.set_option("custom_symbols", {"mdot": r"\dot{m}"})
 
 #: Units exported into every document namespace under their bare names.
 _UNITS = """

@@ -110,7 +110,7 @@ def new(
             err.print(result.stderr, markup=False)
             _fail("project created, but uv sync failed; correct the dependency source and run uv sync")
     console.print(f"Next: cd {root}")
-    console.print("      uv run kip build")
+    console.print("      uv run doc.py")
 
 
 @app.command()

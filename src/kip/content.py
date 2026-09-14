@@ -311,6 +311,55 @@ class Drawing:
     svg: bytes | None = None       # vector CAD projection, instead of CeTZ
     attachments: dict[str, bytes] = field(default_factory=dict)
 
+    @classmethod
+    def load(cls, path, *, width=170, height=None, caption=None):
+        """Load SVG or wrap PNG bytes for the standard drawing renderer."""
+        from .authoring import project_path
+        import base64
+        import struct
+        path = project_path(path)
+        data = path.read_bytes()
+        if path.suffix.lower() == ".png":
+            if data[:8] != b"\x89PNG\r\n\x1a\n":
+                raise ValueError(f"invalid PNG: {path}")
+            w, h = struct.unpack(">II", data[16:24])
+            encoded = base64.b64encode(data).decode()
+            data = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+                    f'<image width="{w}" height="{h}" href="data:image/png;base64,{encoded}"/></svg>').encode()
+        elif path.suffix.lower() != ".svg":
+            raise ValueError("Drawing.load supports SVG and PNG")
+        return cls(svg=data, width=width, height=height, caption=caption)
+
+    @classmethod
+    def grid(cls, items, *, columns=2, width=170, height=None):
+        """Compose (label, Drawing) pairs without changing their geometry."""
+        import xml.etree.ElementTree as ET
+        import math
+        if not items or columns < 1:
+            raise ValueError("drawing grid needs items and positive columns")
+        ns = "http://www.w3.org/2000/svg"
+        root = ET.Element(f"{{{ns}}}svg", viewBox=f"0 0 {400*columns} {370*math.ceil(len(items)/columns)}")
+        for i, (label, drawing) in enumerate(items):
+            x, y = (i % columns)*400, (i // columns)*370
+            text = ET.SubElement(root, f"{{{ns}}}text", {"x":str(x+200), "y":str(y+18), "text-anchor":"middle", "font-family":"Arial", "font-size":"12"})
+            text.text = label
+            if drawing.svg is None:
+                raise ValueError("Drawing.grid requires SVG or PNG drawings")
+            child = ET.fromstring(drawing.svg)
+            child.attrib.update(x=str(x), y=str(y+28), width="400", height="335", preserveAspectRatio="xMidYMid meet")
+            # Avoid collisions between independently exported CAD SVG layers.
+            ids = {e.attrib['id']: f"grid{i}_{e.attrib['id']}" for e in child.iter() if 'id' in e.attrib}
+            for element in child.iter():
+                for key, value in list(element.attrib.items()):
+                    if key == 'id': element.set(key, ids[value])
+                    else:
+                        for old, new in ids.items():
+                            value = value.replace(f'url(#{old})', f'url(#{new})')
+                            if value == f'#{old}': value = f'#{new}'
+                        element.set(key, value)
+            root.append(child)
+        return cls(svg=ET.tostring(root), width=width, height=height)
+
 # sources
 
 
@@ -358,6 +407,15 @@ class Sources(dict):
         super().__init__()
         for k, v in {**(mapping or {}), **kw}.items():
             self[k] = v if isinstance(v, Source) else Source(**v)
+
+    @classmethod
+    def load(cls, path="sources.toml"):
+        """Load [sources.key] tables relative to the document directory."""
+        import tomllib
+        from .authoring import project_path
+        with project_path(path).open("rb") as stream:
+            data = tomllib.load(stream)
+        return cls(data.get("sources", {}))
 
 
 def nomenclature(entries: dict[str, str | tuple[str, str]], **options) -> Table:

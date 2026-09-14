@@ -1,7 +1,9 @@
-"""Edit this document, then run: uv run kip build"""
+"""Edit this document, then run: uv run doc.py"""
 from kip import *
 
-# %% text scope "Scope" wrap_title=true
+report = run_document(__file__)
+
+# %% text scope "Scope"
 """
 Describe the purpose and assumptions of this analysis.
 The computed moment is @val:M, derived in @blk:moment.
