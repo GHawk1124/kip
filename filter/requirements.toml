@@ -1,0 +1,57 @@
+[item]
+id = "F100"
+name = "Seven-component water filter"
+kind = "assembly"
+revision = "A0"
+
+[req.R01]
+text = "The fully built filter shall contain 650 psig water at 70 F."
+verification = "test"
+
+[req.R02]
+text = "The fully built filter shall withstand 1300 psig hydrostatic proof."
+verification = "test"
+
+[req.R03]
+text = "The fully built filter shall have burst pressure at least 2600 psig."
+verification = "test"
+
+[req.R04]
+text = "The filter shall provide the specified 5 micrometer filtration rating."
+verification = "test"
+
+[req.R05]
+text = "The completed assembly shall retain 99.9 percent at 3 micrometers."
+verification = "test"
+
+[req.R06]
+text = "The assembly shall pass 0.14 lbm/s nominal water flow."
+verification = "test"
+
+[req.R07]
+text = "The assembly shall pass 0.47 lbm/s surge water flow."
+verification = "test"
+
+[req.R08]
+text = "Clean assembly pressure drop shall be at most 5 psi."
+verification = "test"
+
+[req.R09]
+text = "The assembly shall retain at least 0.318 g dry contaminant."
+verification = "test"
+
+[req.R10]
+text = "Loaded assembly pressure drop at capacity shall be at most 18 psi."
+verification = "test"
+
+[req.R11]
+text = "Dry assembly mass including integral stubs shall be at most 1 lb."
+verification = "analysis"
+
+[req.R12]
+text = "Service water temperature shall be 70 F."
+verification = "test"
+
+[req.R13]
+text = "The baseline assembly shall contain seven components."
+verification = "inspection"

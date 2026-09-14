@@ -1,0 +1,73 @@
+{
+  "area_m2": 0.0026420794216690164,
+  "flow_Lmin_nominal": 3.8178497860700014,
+  "flow_Lmin_surge": 12.81706713894929,
+  "face_velocity_m_s": [
+    0.02408361733790629,
+    0.08085214392011397
+  ],
+  "bore_velocity_m_s": [
+    0.3266003072802894,
+    1.0964438887266856
+  ],
+  "nominal_cv_hypothesis": 60000000.0,
+  "nominal_ci_hypothesis": 3000,
+  "clean_psi_70F": [
+    0.48424994380089614,
+    3.828632401708309
+  ],
+  "clean_psi_5C": [
+    0.5978014727597933,
+    4.209841106070321
+  ],
+  "loaded_psi_alpha_1e9": [
+    0.8958417103068812,
+    5.210404760692688
+  ],
+  "alpha_limit_70F_m_kg": 42556123522.32124,
+  "alpha_limit_5C_m_kg": 27249739710.78391,
+  "cv_limit_cold_surge_per_m": 104359240.47285563,
+  "blocked_fraction_at_18psi": 0.8749835484573514,
+  "mc_n": 100000,
+  "mc_seed": 6501300,
+  "mc_screening_only": true,
+  "mc_clean_nominal_fraction": 1.0,
+  "mc_clean_surge_fraction": 0.7308,
+  "mc_loaded_nominal_fraction": 0.87695,
+  "mc_joint_fraction": 0.64169,
+  "mc_crush_fraction": 0.99928,
+  "selective_pairing_fraction": 0.36784,
+  "selective_geometric_fraction": 1.0,
+  "selective_meop_bounds_mm": [
+    0.04459709039573921,
+    0.07759709039573921
+  ],
+  "selective_proof_bounds_mm": [
+    0.04119418079147842,
+    0.07419418079147844
+  ],
+  "mc_crush_quantiles_um": [
+    40.46791127714433,
+    58.595739415720416,
+    76.613544710469
+  ],
+  "mc_crush_worst_mm": [
+    0.032597090395739214,
+    0.0845970903957392
+  ],
+  "fem_opening_mm_applied_to_crush": 0.0034029096042607863,
+  "pressure_forces_N": {
+    "18": 327.8969345022781,
+    "650": 11840.722634804486,
+    "1300": 23681.445269608972,
+    "2600": 47362.890539217944
+  },
+  "coarse_optimistic_yield_N": 4943.566409252847,
+  "coarse_optimistic_ultimate_N": 14103.704167574297,
+  "coining_force_N": [
+    20106.192982974677,
+    36191.14736935442
+  ],
+  "full_annular_slit_0_1pct_limit_um": 2.2883649050906323,
+  "thermal_diffusion_length_mm_10s": 9.63914852964716
+}

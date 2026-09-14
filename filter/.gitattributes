@@ -1,0 +1,8 @@
+# Preserve exported artifacts exactly; ignore exporter-specific whitespace.
+*.pdf binary
+*.png binary
+*.npz binary
+*.vtu -text -diff
+*.step -text -whitespace
+*.dxf -text -whitespace
+assets/*.svg -whitespace

@@ -1,0 +1,46 @@
+{
+  "load_psi": 650,
+  "model": "linear elastic, axisymmetric, ideal welded symmetry",
+  "validation_Lame_relative_error": 0.02296457951244244,
+  "convergence": [
+    {
+      "size_mm": 1.2,
+      "nodes": 341,
+      "elements": 529,
+      "peak_vm_MPa": 64.087625264534,
+      "tube_vm_mean_MPa": 19.982664811597665,
+      "cone_vm_mean_MPa": 37.281351966967726,
+      "land_opening_mm": 0.003718118781178106,
+      "relative_free_residual": 1.909056878743492e-13,
+      "axial_force_N": 19452.716323873497,
+      "axial_reaction_N": -19452.71632387463,
+      "strain_energy_Nmm": 140.3071763407369
+    },
+    {
+      "size_mm": 0.7,
+      "nodes": 818,
+      "elements": 1384,
+      "peak_vm_MPa": 86.09214973888369,
+      "tube_vm_mean_MPa": 20.024847925275665,
+      "cone_vm_mean_MPa": 38.3281429922549,
+      "land_opening_mm": 0.0034557711999685047,
+      "relative_free_residual": 4.4887898416060015e-13,
+      "axial_force_N": 19452.716323873497,
+      "axial_reaction_N": -19452.716323876375,
+      "strain_energy_Nmm": 143.10518511486782
+    },
+    {
+      "size_mm": 0.4,
+      "nodes": 2169,
+      "elements": 3914,
+      "peak_vm_MPa": 99.68318778579933,
+      "tube_vm_mean_MPa": 20.034072612404383,
+      "cone_vm_mean_MPa": 38.540876154687986,
+      "land_opening_mm": 0.0034029096042607863,
+      "relative_free_residual": 1.1601933454119135e-12,
+      "axial_force_N": 19452.716323873497,
+      "axial_reaction_N": -19452.716323871173,
+      "strain_energy_Nmm": 144.40855458399878
+    }
+  ]
+}

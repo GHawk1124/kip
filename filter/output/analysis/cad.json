@@ -1,0 +1,16 @@
+{
+  "solids": 7,
+  "valid": true,
+  "interference_mm3": [],
+  "housing_volume_mm3": 38331.11321050343,
+  "housing_mass_kg": 0.17287332057937047,
+  "frame_pair_kg": 0.0038603890527311377,
+  "coarse_pair_kg": 0.010522278772783314,
+  "fine_kg": 0.003656028450615122,
+  "dry_mass_kg": 0.3637853374348705,
+  "envelope_mm": [
+    82,
+    82,
+    116
+  ]
+}

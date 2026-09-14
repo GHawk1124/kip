@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.agents/
+# Publish the report, CAD and analysis evidence; keep QA and duplicate archives local.
+!output/
+output/*
+!output/F100_engineering_design.pdf
+!output/cad/
+!output/analysis/

@@ -1,0 +1,16 @@
+{
+  "numerical_checks": "PASS",
+  "checks": [
+    "Pappus/CAD volume",
+    "7 valid noninterfering solids",
+    "20 percent mass reserve",
+    "hydraulic JSON vs unit-checked Kip result",
+    "selective stack at MEOP/proof",
+    "NNLS mathematical recovery fixture",
+    "Lame benchmark",
+    "FEM force balance",
+    "all Kip blocks execute",
+    "mass JSON vs Kip mass"
+  ],
+  "qualification": "NOT ESTABLISHED; untested service requirements remain open"
+}

@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg width="84.35mm" height="84.35mm" viewBox="-42.175 -42.175 84.35 84.35" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <g transform="scale(1,-1)" stroke-linecap="round">
+    <g fill="none" stroke="rgb(0,0,0)" stroke-width="0.35" id="visible">
+      <circle cx="0.0" cy="0.0" r="41.0" />
+      <circle cx="0.0" cy="0.0" r="40.0" />
+      <circle cx="0.0" cy="0.0" r="13.5" />
+      <circle cx="0.0" cy="0.0" r="9.525" />
+      <circle cx="0.0" cy="0.0" r="7.875" />
+    </g>
+    <g fill="none" stroke="rgb(100,100,100)" stroke-width="0.2" id="hidden" stroke-dasharray="2.4 3.6">
+      <circle cx="0.0" cy="0.0" r="41.0" />
+      <circle cx="0.0" cy="0.0" r="9.525" />
+      <circle cx="0.0" cy="0.0" r="7.875" />
+      <line x1="7.875" y1="0.0" x2="36.0" y2="0.0" />
+      <circle cx="0.0" cy="0.0" r="36.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="29.0" />
+      <circle cx="0.0" cy="0.0" r="29.0" />
+      <circle cx="0.0" cy="0.0" r="31.8" />
+      <circle cx="0.0" cy="0.0" r="31.8" />
+      <circle cx="0.0" cy="0.0" r="32.2" />
+      <circle cx="0.0" cy="0.0" r="32.2" />
+      <circle cx="0.0" cy="0.0" r="35.2" />
+      <circle cx="0.0" cy="0.0" r="35.2" />
+      <circle cx="0.0" cy="0.0" r="37.0" />
+      <circle cx="0.0" cy="0.0" r="37.0" />
+      <circle cx="0.0" cy="0.0" r="38.0" />
+      <circle cx="0.0" cy="0.0" r="38.0" />
+      <circle cx="0.0" cy="0.0" r="38.5" />
+      <circle cx="0.0" cy="0.0" r="38.5" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="29.0" />
+      <circle cx="0.0" cy="0.0" r="29.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="0.0" r="35.0" />
+      <circle cx="0.0" cy="-0.0" r="35.0" />
+      <circle cx="0.0" cy="-0.0" r="35.0" />
+      <circle cx="0.0" cy="-0.0" r="29.0" />
+      <circle cx="0.0" cy="-0.0" r="29.0" />
+      <circle cx="0.0" cy="0.0" r="41.0" />
+      <circle cx="0.0" cy="-0.0" r="41.0" />
+      <circle cx="0.0" cy="-0.0" r="40.0" />
+      <circle cx="0.0" cy="-0.0" r="13.5" />
+      <circle cx="0.0" cy="-0.0" r="9.525" />
+      <circle cx="0.0" cy="-0.0" r="9.525" />
+      <circle cx="0.0" cy="-0.0" r="7.875" />
+      <circle cx="0.0" cy="-0.0" r="7.875" />
+      <line x1="7.875" y1="-0.0" x2="36.0" y2="-0.0" />
+      <circle cx="0.0" cy="-0.0" r="36.0" />
+      <circle cx="0.0" cy="-0.0" r="35.0" />
+      <circle cx="0.0" cy="-0.0" r="35.0" />
+      <circle cx="0.0" cy="-0.0" r="29.0" />
+      <circle cx="0.0" cy="-0.0" r="29.0" />
+      <circle cx="0.0" cy="-0.0" r="31.8" />
+      <circle cx="0.0" cy="-0.0" r="31.8" />
+      <circle cx="0.0" cy="-0.0" r="32.2" />
+      <circle cx="0.0" cy="-0.0" r="32.2" />
+      <circle cx="0.0" cy="-0.0" r="35.2" />
+      <circle cx="0.0" cy="-0.0" r="35.2" />
+      <circle cx="0.0" cy="-0.0" r="37.0" />
+      <circle cx="0.0" cy="0.0" r="37.0" />
+      <circle cx="0.0" cy="0.0" r="38.0" />
+      <circle cx="0.0" cy="-0.0" r="38.0" />
+      <circle cx="0.0" cy="-0.0" r="38.5" />
+      <circle cx="0.0" cy="0.0" r="38.5" />
+    </g>
+  </g>
+</svg>
