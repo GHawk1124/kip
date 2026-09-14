@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+.agents/
+!output/
+output/*
+!output/simple_filter.pdf
+!output/cad/
+!output/calculations.json

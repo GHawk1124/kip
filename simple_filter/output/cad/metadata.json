@@ -1,0 +1,11 @@
+{
+  "solids": 7,
+  "valid": true,
+  "interference_mm3": [],
+  "housing_volume_mm3": 33552.777592650644,
+  "envelope_mm": [
+    76.0,
+    76.0,
+    116.0
+  ]
+}
