@@ -6,3 +6,4 @@
 *.step -text -whitespace
 *.dxf -text -whitespace
 assets/*.svg -whitespace
+*.xlsx binary

@@ -58,6 +58,24 @@ def render(parts, name, exploded=False, cut=False):
     p.screenshot(str(ASSETS/f'{name}.png'),transparent_background=True)
     p.close()
 
+def circular_detail(parts, center, radius, name):
+    """True CAD faces clipped to a circular detail boundary, no redrawn geometry."""
+    svg = bd.ExportSVG(margin=radius*.04)
+    disk = bd.Circle(radius)
+    for i, part in enumerate(parts):
+        section = bd.Plane.XZ.to_local_coords(bd.section(part, section_by=bd.Plane.XZ))
+        section = bd.Pos(-center, 0) * section
+        clipped = section.intersect(disk)
+        if isinstance(clipped, list): clipped = bd.Compound(children=clipped)
+        if clipped is None or not clipped.edges(): continue
+        color = (222, 229, 233) if i in (0, 6) else ((229, 180, 96) if i in (1, 5) else (106, 167, 176))
+        svg.add_layer(f'part_{i}', fill_color=color, line_weight=radius*.004)
+        svg.add_shape(clipped, layer=f'part_{i}')
+    svg.add_layer('boundary', line_weight=radius*.008)
+    svg.add_shape(disk.face().outer_wire(), layer='boundary')
+    svg.write(ASSETS/f'{name}.svg')
+
+
 def main():
     parts,a,e=make_models()
     for s in parts: assert s.is_valid and len(s.solids())==1
@@ -94,6 +112,8 @@ def main():
     dxf=bd.ExportDXF()
     dxf.add_shape(cut)
     dxf.write(OUT/'cad/detail_B.dxf')
+    circular_detail(parts, (ACTIVE_D/2+C['body_d']/2)/2, 5.2, 'detail_circle')
+    circular_detail(parts, ACTIVE_D/2+.5, 1.25, 'crush_circle')
     pack=bd.Compound(children=[bd.Pos(Z=z)*s for z,s in zip([8,4,0,-4,-8],parts[1:6])])
     (ASSETS/'element.svg').write_bytes(cad_view(pack,'iso',width=160).svg)
     info=dict(solids=7,valid=True,interference_mm3=overlaps,

@@ -1,7 +1,4 @@
-"""Regenerate only simple_filter, from its editable constants.csv table."""
-import subprocess,sys
+"""Compatibility entry point; prefer: uv run generate.py."""
+import runpy
 from pathlib import Path
-ROOT=Path(__file__).resolve().parent
-for script in ['cad_model.py','views.py','calculate.py','author_document.py']:
-    subprocess.run([sys.executable,str(ROOT/script)],cwd=ROOT,check=True)
-subprocess.run([str(Path(sys.executable).parent/'kip.exe'),'build','--output','simple_filter.pdf'],cwd=ROOT,check=True)
+runpy.run_path(str(Path(__file__).with_name("generate.py")), run_name="__main__")

@@ -2,11 +2,14 @@ from kip import *
 from pathlib import Path
 import json
 import sympy as sp
-import csv
+import runpy
 ROOT=Path.cwd()
-ROWS=list(csv.DictReader((ROOT/"constants.csv").open(encoding="utf-8")))
-C={r["key"]:float(r["value"]) for r in ROWS}
+INPUTS=runpy.run_path(str(ROOT / "inputs.py"))
+C,ROWS=INPUTS["C"],INPUTS["ROWS"]
 CAD=json.loads((ROOT / "output/cad/metadata.json").read_text())
+SOURCE_DATA=json.loads((ROOT / "sources.json").read_text(encoding="utf-8"))
+for row in INPUTS["SUPPLIERS"]:
+    SOURCE_DATA[row["source_key"]]={"title":row["supplier_item"],"url":row["source_url"],"note":row["catalog_basis"]}
 def asset(name,width=170,height=None):
     return Drawing(svg=(ROOT/"assets"/name).read_bytes(),width=width,height=height)
 
@@ -20,19 +23,11 @@ cover=asset('cover_pair.svg',175,78)
 
 
 # %% text constant_intro "Calculation constants"
-'Edit constants.csv, the editable source of this table, then run regenerate.py. All dimensional and engineering inputs below are read from that table. Derived CAD volume is regenerated from those dimensions. Changing temperature also requires updating the corresponding water properties.'
+'Edit input/constants.xlsx, the editable source of this table, then run uv run generate.py. All dimensional and engineering inputs below are read from that table. Derived CAD volume is regenerated from those dimensions. Changing temperature also requires updating the corresponding water properties.'
 
 
-# %% table constants_0 "Constants"
-constants_0=Table(['Key', 'Value / unit', 'Definition / basis'],[('temperature_F', '70 degF', 'Service water temperature; User'), ('rho_w', '997.99 kg/m3', 'Water density at stated temperature; IAPWS approximation; pressure effects omitted'), ('mu_w', '0.000979 Pa s', 'Water dynamic viscosity; IAPWS approximation'), ('mdot_n', '0.14 lb/s', 'Nominal mass flow; User'), ('mdot_s', '0.47 lb/s', 'Surge mass flow; User'), ('p_meop', '650 psi', 'Housing operating pressure difference; User: internal minus external'), ('p_proof', '1300 psi', 'Housing proof pressure difference; User'), ('p_burst', '2600 psi', 'Housing burst pressure difference; User'), ('dp_clean_limit', '5 psi', 'Clean pressure-drop limit; User'), ('dp_loaded_limit', '18 psi', 'Loaded pressure-drop limit; User; nominal flow basis'), ('dirt_mass', '0.318 g', 'Retained dry dirt mass; User; contaminant unspecified'), ('mass_limit', '1 lb', 'Maximum dry hardware mass; User'), ('rating', '5 um', 'Filtration rating target; User; test definition pending'), ('efficiency', '99.9 percent', 'Capture efficiency target; User')])
-
-
-# %% table constants_14 "Constants / continued"
-constants_14=Table(['Key', 'Value / unit', 'Definition / basis'],[('efficiency_size', '3 um', 'Efficiency particle size; User'), ('active_d', '58 mm', 'Frame opening / exposed screen diameter; Design'), ('frame_d', '70 mm', 'Frame and mesh outside diameter; Design'), ('frame_raw_t', '0.2 mm', 'Uncoined sheet thickness; Design'), ('frame_assembled_t', '0.17 mm', 'Nominal coined frame envelope; Unvalidated manufacturing assumption'), ('coarse_t', '0.48 mm', 'Each coarse envelope thickness; Calender target; raw catalog 0.508 mm'), ('fine_t', '0.18 mm', 'Dutch-twill envelope thickness; Placeholder; NOT supplier-confirmed Dutch twill'), ('body_d', '76 mm', 'Housing outside diameter; Simplified design'), ('pocket_d', '70.4 mm', 'Single frame seat outer diameter; Design'), ('outer_shoulder_z', '6 mm', 'Outer cone start from weld plane; Design'), ('inner_shoulder_z', '8 mm', 'Inner cone start from weld plane; Design'), ('stub_start_z', '36 mm', 'Cone end / straight stub start; Design'), ('half_length', '58 mm', 'Housing half length; Design'), ('stub_od', '19.05 mm', 'Integral weld stub outside diameter; Design; compatible titanium lines')])
-
-
-# %% table constants_28 "Constants / continued"
-constants_28=Table(['Key', 'Value / unit', 'Definition / basis'],[('stub_id', '15.75 mm', 'Flow bore diameter; Design'), ('Cv_f', '6e+07 1/m', 'Fine Dutch-twill viscous resistance; Assumed; fit finished cloth data'), ('Ci_f', '3000 1', 'Fine Dutch-twill inertial resistance; Assumed; not transferred supplier data'), ('Cv_c', '200000 1/m', 'Combined coarse viscous resistance; Assumed'), ('Ci_c', '40 1', 'Combined coarse inertial resistance; Assumed'), ('K_body', '3 1', 'Combined housing loss coefficient; Assumed; changed housing not flow-validated'), ('alpha_c', '1e+09 m/kg', 'Specific cake resistance; Sensitivity input; contaminant uncharacterized'), ('rho_ti', '4510 kg/m3', 'CP titanium Grade 2 density; TIMET'), ('rho_ss', '8000 kg/m3', 'Stainless frame density; Engineering nominal'), ('Sy', '275 MPa', 'Ti Grade 2 minimum yield screening value; TIMET / ATI; stock certificate required'), ('Su', '345 MPa', 'Ti Grade 2 minimum tensile screening value; ATI'), ('coarse_areal_mass', '1.367 kg/m2', 'Each coarse cloth areal mass; TWP 0.280 lb/ft2 rounded'), ('fine_areal_mass', '0.95 kg/m2', 'Dutch-twill areal mass; Placeholder; NOT supplier-confirmed Dutch twill'), ('growth_factor', '1.2 1', 'Dry mass development reserve multiplier; Design assumption')])
+# %% table constants "Constants" pagebreak=true
+constants = Table([Column("key", "Symbol", math=True, align="left"), Column("value", "Value / unit"), Column("definition", "Definition / basis", align="left")], [(r["key"], f"{float(r['value']):g} {r['unit']}", r["description"] + "; " + r["basis"]) for r in ROWS])
 
 
 # %% text requirements "01 / Requirements and interpretation" pagebreak=true
@@ -40,7 +35,7 @@ constants_28=Table(['Key', 'Value / unit', 'Definition / basis'],[('stub_id', '1
 
 
 # %% table reqs "Requirement-by-requirement assessment"
-reqs=Table(['ID / requirement', 'Constant / target', 'Assessment'],[('R01 / Housing MEOP', 'p_meop / 650 psi', '[insert text here]'), ('R02 / Housing proof', 'p_proof / 1300 psi', '[insert text here]'), ('R03 / Housing burst', 'p_burst / 2600 psi', '[insert text here]'), ('R04 / Micron rating', 'rating / 5 um', '[insert text here]'), ('R05 / Efficiency', 'efficiency / 99.9 percent at 3 um', '[insert text here]'), ('R06 / Nominal flow', 'mdot_n / 0.14 lb/s', '[insert text here]'), ('R07 / Surge flow', 'mdot_s / 0.47 lb/s', '[insert text here]'), ('R08 / Clean pressure drop', 'dp_clean_limit / 5 psi', '[insert text here]'), ('R09 / Retained dirt', 'dirt_mass / 0.318 g', '[insert text here]'), ('R10 / Loaded pressure drop', 'dp_loaded_limit / 18 psi', '[insert text here]'), ('R11 / Dry mass', 'mass_limit / 1 lb', '[insert text here]'), ('R12 / Water temperature', 'temperature_F / 70 degF', '[insert text here]'), ('R13 / Component count', 'Seven', '[insert text here]')])
+reqs=Table(['ID / requirement', 'Target', 'Assessment'],[('R01 / Housing MEOP', '650 psi', '[insert text here]'), ('R02 / Housing proof', '1300 psi', '[insert text here]'), ('R03 / Housing burst', '2600 psi', '[insert text here]'), ('R04 / Micron rating', '5 um', '[insert text here]'), ('R05 / Efficiency', '99.9 percent at 3 um', '[insert text here]'), ('R06 / Nominal flow', '0.14 lb/s', '[insert text here]'), ('R07 / Surge flow', '0.47 lb/s', '[insert text here]'), ('R08 / Clean pressure drop', '5 psi', '[insert text here]'), ('R09 / Retained dirt', '0.318 g', '[insert text here]'), ('R10 / Loaded pressure drop', '18 psi', '[insert text here]'), ('R11 / Dry mass', '1 lb', '[insert text here]'), ('R12 / Water temperature', '70 degF', '[insert text here]'), ('R13 / Component count', 'Seven', '[insert text here]')])
 
 
 # %% text architecture "02 / Architecture" pagebreak=true
@@ -69,10 +64,6 @@ drawings=asset('drawing_sheet.svg',175,170)
 
 # %% text element "06 / Filter element" pagebreak=true
 '[insert text here]'
-
-
-# %% draw element_fig "Three-mesh pack" caption="Build123d exploded element; media envelopes, not modeled pores."
-element_fig=asset('element.svg',165,72)
 
 
 # %% table suppliers "Mesh sourcing"
@@ -181,12 +172,12 @@ sigma_r = -p_burst
 sigma_vm = (((sigma_h-sigma_z)**2 + (sigma_z-sigma_r)**2 + (sigma_r-sigma_h)**2) / 2)**0.5
 
 
-# %% text detail "Detail B"
+# %% text detail "Detail B" pagebreak=true
 '[insert text here]'
 
 
-# %% draw detail_b "Housing and pack / section detail" caption="Direct Build123d center-plane section; equal geometric scale, no callouts."
-detail_b=asset('detail_b.svg',175,42)
+# %% draw detail_b "Housing and pack / section detail" caption="Circular sections from Build123d. Gold: solid frame; blue: media envelopes. Representative frame coining from the constants table; not a deformation prediction or verified seal."
+detail_b=asset('detail_circles.svg',175,90)
 
 
 # %% text mass "22 / Full mass calculations" pagebreak=true
@@ -229,4 +220,4 @@ MS_mass = m_limit / m_reserve - 1
 
 
 # %% sources references "References"
-refs = Sources(**{key: Source(**value) for key, value in json.loads((ROOT / "sources.json").read_text(encoding="utf-8")).items()})
+refs = Sources(**{key: Source(**value) for key, value in SOURCE_DATA.items()})

@@ -6,3 +6,4 @@ output/*
 !output/simple_filter.pdf
 !output/cad/
 !output/calculations.json
+input/*.inspect.ndjson
