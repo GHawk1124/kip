@@ -113,7 +113,6 @@ def main():
     dxf.add_shape(cut)
     dxf.write(OUT/'cad/detail_B.dxf')
     circular_detail(parts, (ACTIVE_D/2+C['body_d']/2)/2, 5.2, 'detail_circle')
-    circular_detail(parts, ACTIVE_D/2+.5, 1.25, 'crush_circle')
     pack=bd.Compound(children=[bd.Pos(Z=z)*s for z,s in zip([8,4,0,-4,-8],parts[1:6])])
     (ASSETS/'element.svg').write_bytes(cad_view(pack,'iso',width=160).svg)
     info=dict(solids=7,valid=True,interference_mm3=overlaps,

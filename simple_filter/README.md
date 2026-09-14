@@ -60,8 +60,8 @@ No available citation proves 99.9% at 3 um.
 Named narrative sections and assessments remain `[insert text here]`. Section 08
 retains the original mathematical forms; assignments reference the constants table.
 Original section numbers are retained. No interpretation or old simulation figures.
-Detail B uses true Build123d faces clipped to circles, with a second circle
-enlarging the representative coined-frame contact. Frame thickness reduction
-is read from the constants workbook; it is not a deformation simulation. Mesh CAD
+Detail B uses true Build123d faces clipped to one circle. The representative
+crush-seal enlargement is omitted. Section 09 defines the assumed fine, coarse-pair
+and body coefficients; section 10 (fit strategy) is omitted. Section 11 is retained. Mesh CAD
 solids are porous-media envelopes. `calculate.py` independently checks revolved
 polygon volume against CAD. `output/calculations.json` holds the new hand results.

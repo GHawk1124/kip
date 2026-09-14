@@ -2,6 +2,8 @@ from kip import *
 from pathlib import Path
 import json
 import sympy as sp
+import handcalcs
+handcalcs.set_option("custom_symbols", {"mdot": r"\dot{m}"})
 import runpy
 ROOT=Path.cwd()
 INPUTS=runpy.run_path(str(ROOT / "inputs.py"))
@@ -10,6 +12,8 @@ CAD=json.loads((ROOT / "output/cad/metadata.json").read_text())
 SOURCE_DATA=json.loads((ROOT / "sources.json").read_text(encoding="utf-8"))
 for row in INPUTS["SUPPLIERS"]:
     SOURCE_DATA[row["source_key"]]={"title":row["supplier_item"],"url":row["source_url"],"note":row["catalog_basis"]}
+def input_symbol(key):
+    return Math("dot(m)_" + key.rsplit("_",1)[1]) if key.startswith("mdot_") else Symbol({"Cv_f":"C_vf", "Ci_f":"C_if", "Cv_c":"C_vc", "Ci_c":"C_ic"}.get(key,key))
 def asset(name,width=170,height=None):
     return Drawing(svg=(ROOT/"assets"/name).read_bytes(),width=width,height=height)
 
@@ -27,7 +31,7 @@ cover=asset('cover_pair.svg',175,78)
 
 
 # %% table constants "Constants" pagebreak=true
-constants = Table([Column("key", "Symbol", math=True, align="left"), Column("value", "Value / unit"), Column("definition", "Definition / basis", align="left")], [(r["key"], f"{float(r['value']):g} {r['unit']}", r["description"] + "; " + r["basis"]) for r in ROWS])
+constants = Table([Column("key", "Symbol", math=True, align="left"), Column("value", "Value / unit"), Column("definition", "Definition / basis", align="left")], [(input_symbol(r["key"]), f"{float(r['value']):g} {r['unit']}", r["description"] + "; " + r["basis"]) for r in ROWS])
 
 
 # %% text requirements "01 / Requirements and interpretation" pagebreak=true
@@ -78,13 +82,14 @@ suppliers=Table(['Supplier / item', 'Catalog basis', 'Assessment'],[('GKD / Dutc
 '[insert text here]'
 
 
-# %% given fluidinputs "Water and geometry"
+# %% table fluidinputs "Water and geometry" 
 rho_w = C["rho_w"] * kg / m**3
 mu_w = C["mu_w"] * Pa * s
 d_face = C["active_d"] * mm
 d_bore = C["stub_id"] * mm
 mdot_n = C["mdot_n"] * lb / s
 mdot_s = C["mdot_s"] * lb / s
+fluid_table = Table(["Symbol", "Value"], [(Symbol("rho_w"), rho_w), (Symbol("mu_w"), f"{C['mu_w']:g} Pa s"), (Symbol("d_face"), d_face), (Symbol("d_bore"), d_bore), (Math("dot(m)_n"), mdot_n), (Math("dot(m)_s"), mdot_s)])
 
 
 # %% calc approach "Exposed area and approach velocity" unit="A_face=mm**2, U_n=m/s, U_s=m/s"
@@ -93,7 +98,7 @@ U_n = mdot_n / (rho_w * A_face)
 U_s = mdot_s / (rho_w * A_face)
 
 
-# %% symbolic flowmodel "Screen-specific resistance model"
+# %% symbolic flowmodel "Screen-specific resistance model" 
 Cv, Ci, visc, dens, velocity = sp.symbols("C_v C_i mu rho U", positive=True)
 dp_screen = Cv * visc * velocity + Ci * dens * velocity**2
 
@@ -106,12 +111,17 @@ dp_screen = Cv * visc * velocity + Ci * dens * velocity**2
 '[insert text here]'
 
 
-# %% given hyd_inputs "Hydraulic hypotheses / constants table"
+# %% text resistance_basis "Assumed resistance coefficients"
+'Use the assumed values below for Dutch twill and the combined coarse pair. These are preliminary inputs, not measured supplier data. The viscous terms scale with viscosity and velocity; the inertial terms scale with density and velocity squared. Housing loss uses bore velocity: $Delta p_"body" = K_"body" rho V_"bore"^2 / 2$.'
+
+
+# %% table hyd_inputs "Coefficient definitions / constants workbook" 
 C_vf = C["Cv_f"] / m
 C_if = C["Ci_f"]
 C_vc = C["Cv_c"] / m
 C_ic = C["Ci_c"]
 K_body = C["K_body"]
+coefficient_table = Table([Column("symbol", "Symbol", align="left"), Column("value", "Assumed value"), Column("definition", "Definition", align="left")], [(Symbol("C_vf"), C_vf, "Viscous resistance of the single fine Dutch-twill layer"), (Symbol("C_if"), C_if, "Dimensionless inertial resistance of the single fine layer"), (Symbol("C_vc"), C_vc, "Combined viscous resistance of both coarse supports"), (Symbol("C_ic"), C_ic, "Combined dimensionless inertial resistance of both coarse supports"), (Symbol("K_body"), K_body, "Dimensionless inlet, outlet and transition loss coefficient; excludes mesh")])
 
 
 # %% calc hyd_surge "Surge assembly pressure drop" unit="A_bore=mm**2, V_bore=m/s, DP_s=psi"
@@ -125,15 +135,7 @@ V_nom = mdot_n / (rho_w * A_bore)
 DP_n = (C_vf + C_vc) * mu_w * U_n + (C_if + C_ic) * rho_w * U_n**2 + K_body * rho_w * V_nom**2 / 2
 
 
-# %% text fit "10 / Fit strategy" pagebreak=true
-'[insert text here]\n\nFine media: Dutch twill. Cv and Ci remain assumed until fitted to the selected finished cloth.'
-
-
-# %% text fit_formula "Fit the supplied model"
-'[insert text here]\n\n$Delta p/(mu U) = C_v + C_i (rho U/mu)$'
-
-
-# %% text dirt "11 / Loaded pressure drop"
+# %% text dirt "11 / Loaded pressure drop" pagebreak=true
 '[insert text here]'
 
 
@@ -141,7 +143,7 @@ DP_n = (C_vf + C_vc) * mu_w * U_n + (C_if + C_ic) * rho_w * U_n**2 + K_body * rh
 '[insert text here]\n\n$ Delta p_l = C_v mu U + C_i rho U^2 + mu U alpha_c m_d / A_f $'
 
 
-# %% given cakeinputs "Cake inputs / constants table"
+# %% given cakeinputs "Cake inputs / constants table" 
 alpha_c = C["alpha_c"] * m / kg
 m_d = C["dirt_mass"] * g
 
@@ -176,15 +178,15 @@ sigma_vm = (((sigma_h-sigma_z)**2 + (sigma_z-sigma_r)**2 + (sigma_r-sigma_h)**2)
 '[insert text here]'
 
 
-# %% draw detail_b "Housing and pack / section detail" caption="Circular sections from Build123d. Gold: solid frame; blue: media envelopes. Representative frame coining from the constants table; not a deformation prediction or verified seal."
-detail_b=asset('detail_circles.svg',175,90)
+# %% draw detail_b "Housing and pack / section detail" caption="Circular section from Build123d. Gold: solid frames; blue: media envelopes."
+detail_b=asset('detail_circle.svg',175,72)
 
 
 # %% text mass "22 / Full mass calculations" pagebreak=true
 '[insert text here]'
 
 
-# %% given mass_inputs "Density, sheet and cloth inputs / constants table"
+# %% given mass_inputs "Density, sheet and cloth inputs / constants table" 
 V_half = CAD["housing_volume_mm3"] * mm**3
 rho_ti = C["rho_ti"] * kg / m**3
 rho_ss = C["rho_ss"] * kg / m**3
@@ -219,5 +221,5 @@ MS_mass = m_limit / m_reserve - 1
 '[insert text here]'
 
 
-# %% sources references "References"
+# %% sources references "References" 
 refs = Sources(**{key: Source(**value) for key, value in SOURCE_DATA.items()})
