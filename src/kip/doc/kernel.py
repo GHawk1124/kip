@@ -179,8 +179,28 @@ def execute(
     from ..req.model import document_dir
 
     doc_dir = doc.path.parent if doc.path and doc.path.name != "<string>" else None
+    ns.setdefault("__name__", "__kip_document__")
+    ns.setdefault("__file__", str(doc.path.resolve()) if doc.path else "<string>")
+    import sys
+    old_path = sys.path[:]
+    # Each report may have its own analysis.py/cad.py. Do not reuse another
+    # project's imports (or stale workbook inputs) in repeated API builds.
+    local_names = {p.stem for p in doc_dir.glob("*.py")} if doc_dir else set()
+    saved_modules = {name: module for name, module in sys.modules.copy().items()
+                     if name.split(".")[0] in local_names and name != "__main__"}
+    for name in saved_modules:
+        del sys.modules[name]
+    if doc_dir:
+        sys.path.insert(0, str(doc_dir.resolve()))
     with document_dir(doc_dir):
-        return _execute_ordered(doc, ns, previous, only)
+        try:
+            return _execute_ordered(doc, ns, previous, only)
+        finally:
+            sys.path[:] = old_path
+            for name in list(sys.modules):
+                if name.split(".")[0] in local_names and name != "__main__":
+                    del sys.modules[name]
+            sys.modules.update(saved_modules)
 
 
 def _execute_ordered(doc, ns, previous, only):
@@ -284,7 +304,18 @@ def _run_block(block: Block, ns: dict, key: str) -> BlockResult:
                   if n in ns and not n.startswith("_")}
 
     try:
-        if block.uses_handcalcs and block.source.strip():
+        from ..authoring import Calculation
+        calculations = [v for v in res.values.values() if isinstance(v, Calculation)]
+        if block.kind == "calculation" and not calculations:
+            raise CalcRenderError("calculation cell must bind a @calculation result")
+        if block.kind in ("calc", "calculation") and calculations:
+            if len(calculations) != 1:
+                raise CalcRenderError("bind one decorated calculation per cell")
+            calculation = calculations[0]
+            rendered = render_calc(calculation.source, calculation.values,
+                                   precision=calculation.precision)
+            res.latex, res.latex_long = rendered.latex, rendered.latex_long
+        elif block.uses_handcalcs and block.source.strip():
             rendered = render_calc(
                 block.source, ns,
                 precision=block.precision,

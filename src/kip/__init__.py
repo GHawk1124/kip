@@ -5,6 +5,7 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from .api import build_pdf
+from .authoring import run_document, calculation, read_records
 from .content import (
     Column, Drawing, Figure, Series, Source, Sources, Table, strip_units,
     Symbol, Math, nomenclature, plot,
@@ -28,6 +29,7 @@ __all__ = [
     "strip_units",
     "Symbol", "Math", "nomenclature", "plot",
     "build_pdf",
+    "run_document", "calculation", "read_records",
     # requirements and controlled variables
     "Requirements", "Requirement", "ControlledVar", "Item",
     "compliance_matrix", "requirements_table", "variables_table",

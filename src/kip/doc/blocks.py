@@ -17,6 +17,7 @@ KINDS: tuple[str, ...] = (
     "given",     # input quantities -- rendered as marked INPUT
     "controlled",  # inputs read from requirements, shown with provenance
     "calc",      # arithmetic, rendered symbolic -> substituted -> result
+    "calculation", # a decorated function defined in an analysis module
     "symbolic",  # sympy derivation, rendered via TypstPrinter
     "plot",      # a Figure, rendered as a vector lilaq diagram
     "table",     # a Table, rendered as a Typst table (+ optional xlsx export)
@@ -28,7 +29,7 @@ KINDS: tuple[str, ...] = (
 
 #: Kinds whose body is executed as Python.
 CODE_KINDS: frozenset[str] = frozenset({
-    "prelude", "given", "calc", "symbolic", "plot", "table", "draw", "sources",
+    "prelude", "given", "calc", "calculation", "symbolic", "plot", "table", "draw", "sources",
     "requirements", "verify", "controlled",
 })
 

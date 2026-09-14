@@ -1,9 +1,11 @@
-"""Requirements and analysis for one object. Run: uv run kip build"""
+"""Requirements and analysis for one object. Run: uv run doc.py"""
 from kip import *
+
+report = run_document(__file__)
 
 reqs = Requirements.load("requirements.toml")
 
-# %% text scope "Scope" wrap_title=true
+# %% text scope "Scope"
 """Check the object's tensile capacity against @req:REQ-001."""
 
 # %% table symbols "Nomenclature"

@@ -4,10 +4,12 @@ Blocks execute in dependency order, not document order.
 """
 
 from kip import *
+
+report = run_document(__file__)
 import sympy as sp
 reqs = Requirements.load("requirements.toml")
 
-# %% text scope "Scope"  wrap_title=true
+# %% text scope "Scope"
 """
 This note sizes a single-plate lift lug for a pressure-vessel skid, and
 demonstrates every block kind kip supports: prose, inputs, symbolic
@@ -194,25 +196,7 @@ as drawn in @blk:sketch. Design factors follow @src:asme.
 """
 
 # %% sources refs "References" columns=1
-refs = Sources(
-    shigley=Source(
-        title="Shigley's Mechanical Engineering Design",
-        author="R. Budynas and K. Nisbett",
-        publisher="McGraw-Hill", year=2020, section="Ch. 3-14",
-        url="https://www.mheducation.com/highered/product/M9781260113310.html",
-    ),
-    matweb=Source(
-        title="ASTM A36 structural steel, material data sheet",
-        publisher="MatWeb", section="Mechanical properties",
-        url="https://www.matweb.com/search/DataSheet.aspx?MatGUID=afc003f4fb40465fa3df05129f0e88e6",
-    ),
-    asme=Source(
-        title="ASME BTH-1, Design of Below-the-Hook Lifting Devices",
-        publisher="ASME", year=2023, section="Section 3-3.2",
-        url="https://www.asme.org/codes-standards/find-codes-standards/bth-1-design-below-hook-lifting-devices",
-        note="design factor basis",
-    ),
-)
+refs = Sources.load()
 
 # %% text cad_intro "CAD definition" columns=1 pagebreak=true
 """

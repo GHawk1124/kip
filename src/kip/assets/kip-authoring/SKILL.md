@@ -9,7 +9,8 @@ with controlled inputs and verification), or `kip new folder --template showcase
 (all features, including optional build123d CAD). Each creates a uv project,
 layout.toml and this skill. Add dependencies with `uv add` from that folder.
 
-Run `uv run kip check`, then `uv run kip build`. `uv run kip preview` builds and
+Run `uv run doc.py` to prepare assets and build. `uv run kip check` validates
+existing assets; `uv run kip build` also remains supported. `uv run kip preview` builds and
 opens the PDF; `uv run kip watch` rebuilds on source changes. Artifacts are under
 `output/` beside doc.py; `--output name.pdf` chooses a filename within that folder.
 Inspect rendered pages after layout edits. Check reports failed and unverified
@@ -17,10 +18,15 @@ requirements; build validates Python execution but does not certify compliance.
 
 ## Authoring
 
-Import `from kip import *` above the first marker. Markers delimit Python blocks:
+Import `from kip import *` and declare
+`report = run_document(__file__, title="...", prepare=cad.generate)` above the
+first marker (omit prepare without CAD). Page metadata can be passed here;
+layout.toml is optional. The first text cell wraps beneath the title automatically.
+Keep editable prose in doc.py, geometry in cad.py, computations in analysis.py.
+Do not generate doc.py with another Python script. Markers delimit Python blocks:
 
 ```python
-# %% text scope "Scope" wrap_title=true
+# %% text scope "Scope"
 """Stress is @val:sigma_br; see @blk:bearing and @req:REQ-001."""
 
 # %% inputs geometry "Geometry"
@@ -43,6 +49,18 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
 `@src:key`. A block ID and its output variable can differ.
 
 ## Content
+
+- `calculation`: bind a function decorated with `@calculation(units={...})` from
+  analysis.py. Set up its inputs before `# equations`, write ordinary straight-line
+  arithmetic after that marker, and end with `return locals()`. The function call
+  is not printed; Kip renders the validated arithmetic and computed values.
+  Access results as attributes. Use this kind for dotted calls; inline `calc`
+  retains its stricter syntax checks.
+- References use `Sources.load()` and `[sources.key]` tables in sources.toml.
+- `read_records(path)` loads a header-row `Inputs` worksheet; formulas are rejected
+  rather than relying on stale Excel caches. Resolve inputs relative to doc.py.
+- `Drawing.load(path)` supports SVG and PNG; `Drawing.grid([(label, drawing), ...])`
+  composes views. Prefer these to project-specific XML/base64 wrappers.
 
 - `inputs` (alias `given`): quantities in compact outlined boxes.
 - `controlled`: assignments such as `P = reqs.P_design`, with provenance.

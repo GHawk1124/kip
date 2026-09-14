@@ -63,7 +63,7 @@ def _atom(name: str) -> str:
 def render_name(name: str) -> str:
     """``sigma_max`` -> ``sigma_"max"``; ``x`` -> ``x``; ``F_y`` -> ``F_y``."""
     base, sub = _split_name(name)
-    out = _atom(base)
+    out = "dot(m)" if base == "mdot" else _atom(base)
     if sub is not None:
         out += f"_{_atom(sub)}"
     return out

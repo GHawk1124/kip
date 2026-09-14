@@ -287,7 +287,7 @@ def _table_kwargs(tbl: Table, xlsx_href: str | None) -> dict:
 
 def _result_chip(block, result: BlockResult) -> str:
     """Spreadsheet-style output marker showing the block's final value."""
-    if block.kind != "calc" or not result.values:
+    if block.kind not in ("calc", "calculation") or not result.values:
         return "none"
     from ..math.handcalc_bridge import last_assigned_names
     from ..math.printer import render_name
@@ -296,7 +296,13 @@ def _result_chip(block, result: BlockResult) -> str:
     if not names:
         return "none"
     name = names[-1]
-    value = fmt_quantity(result.values[name], block.precision)
+    from ..authoring import Calculation
+    calculation = result.values[name]
+    if isinstance(calculation, Calculation):
+        name = last_assigned_names(calculation.source)[-1]
+        value = fmt_quantity(calculation.values[name], calculation.precision)
+    else:
+        value = fmt_quantity(result.values[name], block.precision)
     return f"result-chip(${render_name(name)}$, {_s(value)})"
 
 
@@ -322,7 +328,7 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
                 f"message: {_s(result.error or 'unknown error')}, "
                 f"detail: {_s((result.traceback or '').strip()[-400:])})")
 
-    kind = block.kind
+    kind = "calc" if block.kind == "calculation" else block.kind
 
     if kind == "text":
         body = _resolve_refs(_markdown_to_typst(result.text or ""), known, sources)
@@ -591,6 +597,13 @@ def emit(doc: Document, layout: Layout | None = None,
          assets: dict[str, str] | None = None) -> dict[str, bytes]:
     """Emit the complete Typst project as ``{filename: bytes}``."""
     layout = layout or Layout()
+    from dataclasses import replace
+    from ..authoring import Report
+    reports = [v for v in doc.namespace.values() if isinstance(v, Report)]
+    if len(reports) > 1:
+        raise ValueError("declare only one report per document")
+    if reports:
+        layout = replace(layout, page=replace(layout.page, **reports[0].page))
     page = layout.page
 
     tf = page.title_fields()
@@ -598,6 +611,10 @@ def emit(doc: Document, layout: Layout | None = None,
               if tf else "()")
 
     opening = [b for b in doc.ordered_blocks() if b.meta.get("wrap_title", "false") == "true"]
+    if not opening and not layout.freeform:
+        first = next(iter(doc.ordered_blocks()), None)
+        if first and first.kind == "text" and first.meta.get("wrap_title") != "false":
+            opening = [first]
     if len(opening) > 1:
         raise ValueError("only one opening text block can use wrap_title=true")
     intro_id = None
