@@ -1,11 +1,23 @@
-"""Build123d manufacturing concept. Exactly seven solids; no discrete wire solids.
-STEP screen discs are media envelopes, NOT impermeable plates or pore-resolved cloth.
-Frame envelopes represent 0.030 mm coining per face at assembly.
-"""
+"""Build123d housing, seven-part assembly, exports and transparent views."""
 import json
 import numpy as np
 from kip.cad import load_build123d, cad_view, cad_section
-from design import *
+"""Simple, axisymmetric cup with one flat seat and one combined closure/weld rim."""
+from analysis import ROOT,C
+OUT=ROOT/'output'; ASSETS=ROOT/'assets'
+for p in [OUT,ASSETS,OUT/'cad',OUT/'qa']:p.mkdir(parents=True,exist_ok=True)
+ACTIVE_D=C['active_d']; FRAME_D=C['frame_d']; FRAME_T_RAW=C['frame_raw_t']
+FINE_T=C['fine_t']; COARSE_T=C['coarse_t']; FRAME_T=C['frame_assembled_t']
+LAND_H=FINE_T/2+COARSE_T+FRAME_T
+PROFILE=[(C['body_d']/2,0),(C['body_d']/2,C['outer_shoulder_z']),
+(C['stub_od']/2,C['stub_start_z']),(C['stub_od']/2,C['half_length']),
+(C['stub_id']/2,C['half_length']),(C['stub_id']/2,C['stub_start_z']),
+(ACTIVE_D/2,C['inner_shoulder_z']),(ACTIVE_D/2,LAND_H),
+(C['pocket_d']/2,LAND_H),(C['pocket_d']/2,0)]
+assert C['body_d']>C['pocket_d']>FRAME_D>ACTIVE_D>C['stub_id']
+assert C['stub_od']>C['stub_id'] and C['half_length']>C['stub_start_z']>C['inner_shoulder_z']>LAND_H
+COLORS=['#879eaf','#e5b460','#6aa7b0','#285e79','#6aa7b0','#e5b460','#879eaf']
+
 bd = load_build123d()
 
 def make_models():
@@ -57,6 +69,10 @@ def render(parts, name, exploded=False, cut=False):
     p.camera.zoom(1.15)
     p.screenshot(str(ASSETS/f'{name}.png'),transparent_background=True)
     p.close()
+    from PIL import Image
+    path=ASSETS/f'{name}.png'
+    with Image.open(path) as im:
+        im.crop(im.getbbox()).save(path)
 
 def circular_detail(parts, center, radius, name):
     """True CAD faces clipped to a circular detail boundary, no redrawn geometry."""
@@ -76,7 +92,7 @@ def circular_detail(parts, center, radius, name):
     svg.write(ASSETS/f'{name}.svg')
 
 
-def main():
+def generate():
     parts,a,e=make_models()
     for s in parts: assert s.is_valid and len(s.solids())==1
     assert len(a.solids())==7
@@ -115,10 +131,15 @@ def main():
     circular_detail(parts, (ACTIVE_D/2+C['body_d']/2)/2, 5.2, 'detail_circle')
     pack=bd.Compound(children=[bd.Pos(Z=z)*s for z,s in zip([8,4,0,-4,-8],parts[1:6])])
     (ASSETS/'element.svg').write_bytes(cad_view(pack,'iso',width=160).svg)
+    volume=abs(sum((z2-z1)*(r1*r1+r1*r2+r2*r2) for (r1,z1),(r2,z2) in zip(PROFILE,PROFILE[1:]+PROFILE[:1]))*np.pi/3)
+    assert abs(volume-parts[0].volume)<1e-5
     info=dict(solids=7,valid=True,interference_mm3=overlaps,
               housing_volume_mm3=parts[0].volume,
               envelope_mm=[C['body_d'],C['body_d'],2*C['half_length']])
     (OUT/'cad/metadata.json').write_text(json.dumps(info,indent=2))
     print(json.dumps(info,indent=2))
 
-if __name__=='__main__': main()
+def metadata():
+    return json.loads((OUT/'cad/metadata.json').read_text())
+
+if __name__=='__main__': generate()

@@ -2,7 +2,7 @@ ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('Open CASCADE Model'),'2;1');
 FILE_NAME('F100 simple seven-component water filter Rev S0',
-  '2026-09-14T03:18:17',('Author'),('Open CASCADE'),
+  '2026-09-14T14:42:57',('Author'),('Open CASCADE'),
   'Open CASCADE STEP processor 7.9','build123d','Unknown');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
 ENDSEC;

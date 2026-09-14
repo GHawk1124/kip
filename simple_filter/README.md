@@ -1,67 +1,51 @@
-# Simple filter / independent KISS document
+# Simple filter
 
-Open `output/simple_filter.pdf`. The original `filter/` project is preserved.
-
-## One-command PDF build
-
-From the repository root:
+From this directory, run:
 
 ```powershell
-uv run simple_filter/generate.py
+uv run doc.py
 ```
 
-Or run `uv run generate.py` inside this directory. The script resolves its own
-project directory, installs locked dependencies automatically, generates CAD and
-hand calculations, checks Kip, and writes `output/simple_filter.pdf`. It never
-rewrites the editable inputs. `regenerate.py` remains a compatibility entry point.
+This prepares CAD, runs the hand calculations and writes `output/simple_filter.pdf`.
+Dependencies are locked in this project; Kip is an editable local dependency.
+The original `filter/` project is untouched.
 
-## Three editable workbooks
+## Three editable Python files
 
-Edit the `Inputs` sheet in these files, then run the command above:
+- **doc.py** — report settings and clearly marked document sections, tables,
+  figures and references. Edit this directly; no script generates it.
+- **cad.py** — Build123d geometry, validity/interference checks, STEP/DXF exports,
+  transparent isometrics and the circular section detail.
+- **analysis.py** — input validation and actual computations. Each `@calculation`
+  function sets up inputs, lists equations after `# equations`, and returns
+  `locals()`. Kip typesets those same equations with their computed values.
 
-- `input/constants.xlsx`: numerical values, units, definitions and assumptions.
-  The `key` column identifies values used by code. The PDF typesets those keys.
-  Change values in their listed units; changing a required unit label is rejected.
-- `input/requirements.xlsx`: requirement IDs, wording, assessments and targets.
-  `constant_key` links to a value in constants.xlsx; `qualifier_key` supplies the
-  particle size for efficiency. Use `target_text` for nonnumeric targets. Numeric
-  targets are deliberately not duplicated across the workbooks.
-- `input/mesh_suppliers.xlsx`: supplier rows, catalog facts, assessments, reference
-  keys and URLs. These drive both mesh sourcing and the corresponding citations.
+Kip supplies title wrapping, layout, drawing composition, spreadsheet reading and
+PDF generation. `sources.toml` is the standard references file. Result quantities
+are also written to `output/calculations.json`, grouped by calculation with units.
 
-Keep the sheet name and column headers. Add or edit ordinary value rows; formulas
-are rejected to avoid stale Excel calculation caches. Duplicate IDs/keys and
-unknown requirement references produce explicit errors. Assessments remain
-`[insert text here]` until edited. Input files are never recreated by generation.
-Update water density and viscosity consistently if changing temperature.
+## Inputs
 
-The PDF has one long constants table without continuation headings. Mathematical
-factors and exact SI conversions remain in code. All CAD dimensions and engineering
-inputs come from constants.xlsx; CAD volume is derived from those dimensions.
+Edit the `Inputs` sheet in each workbook, preserving headers:
 
-## Simplification
+- `input/constants.xlsx`: values, fixed units, symbols and assumptions. CAD and
+  calculations read these values. Update water properties if temperature changes.
+- `input/requirements.xlsx`: wording, assessments and targets. `constant_key`
+  and `qualifier_key` reference constants; `target_text` holds nonnumeric targets.
+- `input/mesh_suppliers.xlsx`: sourcing rows and their reference keys and URLs.
 
-Two identical turned cups have a conical chamber, integral titanium weld stubs,
-one flat annular frame seat, and one outer rim that both limits closure and
-receives the orbital butt weld. No thermal moat, root-relief groove, raised narrow
-land, or separate internal stop ring. The shallow seat needed to capture the
-frame remains accessible directly from the open face.
+Generation never rewrites inputs. Formulas, duplicate keys and unknown requirement
+references are rejected. The constants appear as one long table in the PDF.
 
-This broad seat is a geometry proposal, not a qualified crush seal. Coining force,
-perimeter seam deformation, weld penetration, preload and bypass require development.
-No old FEA, tolerance Monte Carlo, or thermal results are reused. Only requested
-hand calculations are generated. The local cylinder check is not burst qualification.
+## Scope
 
-Fine media is Dutch twill. Thickness and areal mass are explicit placeholders,
-not sourced Dutch-twill specifications. GKD is the primary family lead. Haver
-remains in the complete references as an alternative; HIFLO-S is not Dutch twill.
-No available citation proves 99.9% at 3 um.
+Seven components: two identical turned cups, two solid frames and three directly
+contacting mesh layers. Cups have integral weld stubs, a conical chamber, a flat
+frame seat and one outer closure/orbital-weld rim. No thermal moat or extra relief.
+The circular Detail B shows actual CAD section faces; media are envelope solids.
 
-Named narrative sections and assessments remain `[insert text here]`. Section 08
-retains the original mathematical forms; assignments reference the constants table.
-Original section numbers are retained. No interpretation or old simulation figures.
-Detail B uses true Build123d faces clipped to one circle. The representative
-crush-seal enlargement is omitted. Section 09 defines the assumed fine, coarse-pair
-and body coefficients; section 10 (fit strategy) is omitted. Section 11 is retained. Mesh CAD
-solids are porous-media envelopes. `calculate.py` independently checks revolved
-polygon volume against CAD. `output/calculations.json` holds the new hand results.
+Narrative placeholders and original section numbers remain. Section 09 defines
+assumed Dutch-twill, coarse-pair and housing resistance coefficients; section 10
+is omitted and section 11 retained. Calculations are preliminary: no new FEA or
+Monte Carlo, no qualified seal or burst performance, and no citation establishes
+99.9% retention at 3 microns. Fine-cloth thickness and areal mass are assumptions.

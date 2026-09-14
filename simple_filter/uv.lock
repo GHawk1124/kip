@@ -595,7 +595,7 @@ wheels = [
 [[package]]
 name = "kip"
 version = "0.1.0"
-source = { directory = "../" }
+source = { editable = "../" }
 dependencies = [
     { name = "handcalcs" },
     { name = "openpyxl" },
@@ -1511,7 +1511,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "kip", extras = ["cad"], directory = "../" },
+    { name = "kip", extras = ["cad"], editable = "../" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pymupdf", specifier = ">=1.28.2" },

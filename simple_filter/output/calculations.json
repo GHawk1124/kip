@@ -1,38 +1,274 @@
 {
+  "flow": {
+    "rho_w": {
+      "value": 997.99,
+      "unit": "kilogram / meter ** 3"
+    },
+    "mu_w": {
+      "value": 0.000979,
+      "unit": "pascal * second"
+    },
+    "d_face": {
+      "value": 58.0,
+      "unit": "millimeter"
+    },
+    "mdot_n": {
+      "value": 0.14,
+      "unit": "pound / second"
+    },
+    "mdot_s": {
+      "value": 0.47,
+      "unit": "pound / second"
+    },
+    "A_face": {
+      "value": 2642.079421669016,
+      "unit": "millimeter ** 2"
+    },
+    "U_n": {
+      "value": 0.0240836173379063,
+      "unit": "meter / second"
+    },
+    "U_s": {
+      "value": 0.08085214392011399,
+      "unit": "meter / second"
+    }
+  },
   "nominal": {
-    "flow_L_min": 3.8178497860700014,
-    "U_m_s": 0.02408361733790629,
-    "bore_m_s": 0.3266003072802893,
-    "screen_psi": 0.4610903123495625,
-    "body_psi": 0.02315963143953425,
-    "clean_psi": 0.48424994378909675,
-    "loaded_psi": 0.8958417102850528
+    "mdot": {
+      "value": 0.14,
+      "unit": "pound / second"
+    },
+    "rho_w": {
+      "value": 997.99,
+      "unit": "kilogram / meter ** 3"
+    },
+    "mu_w": {
+      "value": 0.000979,
+      "unit": "pascal * second"
+    },
+    "A_face": {
+      "value": 2642.079421669016,
+      "unit": "millimeter ** 2"
+    },
+    "d_bore": {
+      "value": 15.75,
+      "unit": "millimeter"
+    },
+    "C_vf": {
+      "value": 60000000.0,
+      "unit": "1 / meter"
+    },
+    "C_vc": {
+      "value": 200000.0,
+      "unit": "1 / meter"
+    },
+    "A_bore": {
+      "value": 194.8278319077795,
+      "unit": "millimeter ** 2"
+    },
+    "V_bore": {
+      "value": 0.3266003072802894,
+      "unit": "meter / second"
+    },
+    "U": {
+      "value": 0.0240836173379063,
+      "unit": "meter / second"
+    },
+    "DP": {
+      "value": 0.4842499437890715,
+      "unit": "pound_force_per_square_inch"
+    }
   },
   "surge": {
-    "flow_L_min": 12.81706713894929,
-    "U_m_s": 0.08085214392011397,
-    "bore_m_s": 1.0964438887266856,
-    "screen_psi": 3.567613902380676,
-    "body_psi": 0.26101849923434267,
-    "clean_psi": 3.828632401615019,
-    "loaded_psi": 5.210404760565728
+    "mdot": {
+      "value": 0.47,
+      "unit": "pound / second"
+    },
+    "rho_w": {
+      "value": 997.99,
+      "unit": "kilogram / meter ** 3"
+    },
+    "mu_w": {
+      "value": 0.000979,
+      "unit": "pascal * second"
+    },
+    "A_face": {
+      "value": 2642.079421669016,
+      "unit": "millimeter ** 2"
+    },
+    "d_bore": {
+      "value": 15.75,
+      "unit": "millimeter"
+    },
+    "C_vf": {
+      "value": 60000000.0,
+      "unit": "1 / meter"
+    },
+    "C_vc": {
+      "value": 200000.0,
+      "unit": "1 / meter"
+    },
+    "A_bore": {
+      "value": 194.8278319077795,
+      "unit": "millimeter ** 2"
+    },
+    "V_bore": {
+      "value": 1.0964438887266856,
+      "unit": "meter / second"
+    },
+    "U": {
+      "value": 0.08085214392011399,
+      "unit": "meter / second"
+    },
+    "DP": {
+      "value": 3.82863240161482,
+      "unit": "pound_force_per_square_inch"
+    }
   },
-  "area_mm2": 2642.0794216690165,
-  "housing_volume_mm3": 33552.77759265064,
-  "pressure_burst_MPa": {
-    "hoop": 234.666105486143,
-    "axial": 108.3698682619531,
-    "radial": -17.9263689622368,
-    "vm": 218.75149967706864
+  "loaded": {
+    "mu_w": {
+      "value": 0.000979,
+      "unit": "pascal * second"
+    },
+    "A_face": {
+      "value": 2642.079421669016,
+      "unit": "millimeter ** 2"
+    },
+    "U_n": {
+      "value": 0.0240836173379063,
+      "unit": "meter / second"
+    },
+    "U_s": {
+      "value": 0.08085214392011399,
+      "unit": "meter / second"
+    },
+    "DP_n": {
+      "value": 0.4842499437890715,
+      "unit": "pound_force_per_square_inch"
+    },
+    "DP_s": {
+      "value": 3.82863240161482,
+      "unit": "pound_force_per_square_inch"
+    },
+    "alpha_c": {
+      "value": 1000000000.0,
+      "unit": "meter / kilogram"
+    },
+    "m_d": {
+      "value": 0.318,
+      "unit": "gram"
+    },
+    "DP_loaded_n": {
+      "value": 0.895841710285006,
+      "unit": "pound_force_per_square_inch"
+    },
+    "DP_loaded_s": {
+      "value": 5.210404760565456,
+      "unit": "pound_force_per_square_inch"
+    }
   },
-  "mass_kg": {
-    "housing_pair": 0.30264605388570887,
-    "frame_pair": 0.0038603890527311394,
-    "coarse_pair": 0.010521665035770256,
-    "fine": 0.003656028450615122,
-    "dry": 0.32068413642482535,
-    "reserved": 0.3848209637097904
+  "pressure": {
+    "p_burst": {
+      "value": 17.926368962237742,
+      "unit": "megapascal"
+    },
+    "r_i": {
+      "value": 35.2,
+      "unit": "millimeter"
+    },
+    "r_o": {
+      "value": 38.0,
+      "unit": "millimeter"
+    },
+    "sigma_h": {
+      "value": 234.66610548615532,
+      "unit": "megapascal"
+    },
+    "sigma_z": {
+      "value": 108.3698682619588,
+      "unit": "megapascal"
+    },
+    "sigma_r": {
+      "value": -17.926368962237742,
+      "unit": "megapascal"
+    },
+    "sigma_vm": {
+      "value": 218.7514996770801,
+      "unit": "megapascal"
+    }
   },
-  "mass_lb": 0.706987501630209,
-  "reserved_mass_lb": 0.8483850019562507
+  "mass": {
+    "V_half": {
+      "value": 33552.777592650644,
+      "unit": "millimeter ** 3"
+    },
+    "rho_ti": {
+      "value": 4510.0,
+      "unit": "kilogram / meter ** 3"
+    },
+    "rho_ss": {
+      "value": 8000.0,
+      "unit": "kilogram / meter ** 3"
+    },
+    "d_pack": {
+      "value": 70.0,
+      "unit": "millimeter"
+    },
+    "d_face": {
+      "value": 58.0,
+      "unit": "millimeter"
+    },
+    "t_frame": {
+      "value": 0.2,
+      "unit": "millimeter"
+    },
+    "w_coarse": {
+      "value": 1.367,
+      "unit": "kilogram / meter ** 2"
+    },
+    "w_fine": {
+      "value": 0.95,
+      "unit": "kilogram / meter ** 2"
+    },
+    "m_limit": {
+      "value": 1.0,
+      "unit": "pound"
+    },
+    "A_pack": {
+      "value": 3848.4510006474966,
+      "unit": "millimeter ** 2"
+    },
+    "V_frame": {
+      "value": 241.2743157956961,
+      "unit": "millimeter ** 3"
+    },
+    "m_housings": {
+      "value": 302.64605388570885,
+      "unit": "gram"
+    },
+    "m_frames": {
+      "value": 3.860389052731138,
+      "unit": "gram"
+    },
+    "m_coarse": {
+      "value": 10.521665035770257,
+      "unit": "gram"
+    },
+    "m_fine": {
+      "value": 3.6560284506151217,
+      "unit": "gram"
+    },
+    "m_dry": {
+      "value": 0.7069875016302088,
+      "unit": "pound"
+    },
+    "m_reserve": {
+      "value": 0.8483850019562507,
+      "unit": "pound"
+    },
+    "MS_mass": {
+      "value": 0.17871013477860598,
+      "unit": "dimensionless"
+    }
+  }
 }
