@@ -32,8 +32,8 @@ report = run_document(__file__, title="Beam check", author="Engineering")
 P = 2 * kN
 L = 100 * mm
 
-# %% calc moment "Bending moment" unit=kN*m
-M = P * L
+# %% calc moment "Bending moment"
+M = P * L      # -> kN*m
 ```
 
 For an external calculation, use `@calculation` in `analysis.py`:
@@ -41,11 +41,10 @@ For an external calculation, use `@calculation` in `analysis.py`:
 ```python
 from kip import *
 
-@calculation(units={"M": "kN*m"})
+@calculation
 def moment(P, L):
     # equations
-    M = P * L
-    return locals()
+    M = P * L      # -> kN*m
 ```
 
 Then a document cell is just:
@@ -57,11 +56,36 @@ result = analysis.moment(2 * kN, 100 * mm)
 ```
 
 Setup before `# equations` is not printed. Arithmetic after it is validated and
-rendered with substitutions and units. Results are available as `result.M`.
+rendered with substitutions and units, each result read in the unit its own
+`# -> unit` comment names. Results are available as `result.M`.
 Use `prepare=cad.generate` in `run_document(...)` to regenerate CAD before a direct
 script build. CLI `kip build` and `kip check` consume the existing CAD assets.
 
-Load Excel input rows with `read_records("input/constants.xlsx")`. Load SVG/PNG
+## Spreadsheet inputs
+
+A workbook already names its columns and declares its units, so a document reads
+both rather than restating them:
+
+```python
+C = Constants.load("input/constants.xlsx")   # key, value, unit, description, ...
+C.rho_w                                      # 997.99 kg/m3, a pint quantity
+C.value("body_d", mm)                        # 76.0, for a CAD kernel
+C.add("rho_hot", CoolProp.PropsSI(...), "kg/m3", basis="CoolProp 6.6")
+
+reqs = Sheet.load("input/requirements.xlsx", constants=C,
+                  unique="id", required=("target",))
+```
+
+`Sheet` interpolates `{constant}` cells, checks the columns named by `unique=`
+and `required=`, and renders itself with `sheet.table()` -- titled from its own
+header row, so a table that lives in a spreadsheet stays there. A content cell
+with an empty body places the object already bound to the cell's id:
+
+```python
+# %% table reqs "Requirement-by-requirement assessment"
+```
+
+Load Excel input rows directly with `read_records("input/constants.xlsx")`. Load SVG/PNG
 views with `Drawing.load(...)`, and compose labeled views with `Drawing.grid(...)`.
 All file loaders resolve relative to the document, including builds from another
 working directory. Mass-flow symbols such as `mdot_n` render with an overdot.

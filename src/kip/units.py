@@ -7,7 +7,8 @@ import math
 import handcalcs
 import pint
 
-__all__ = ["ureg", "Q", "UNIT_NAMES", "MATH_NAMES", "namespace", "fmt_quantity"]
+__all__ = ["ureg", "Q", "UNIT_NAMES", "MATH_NAMES", "namespace", "fmt_quantity",
+           "fmt_number"]
 
 #: One registry for the whole process so quantities compose across blocks.
 ureg = pint.UnitRegistry(autoconvert_offset_to_baseunit=True)
@@ -84,14 +85,28 @@ def namespace() -> dict[str, object]:
     return ns
 
 
+def fmt_number(value: float, precision: int = 3) -> str:
+    """A number as an engineer would write it: no padded or lost digits.
+
+    ``650.000`` and ``0.001`` are both wrong for a value read off a sheet, so
+    trailing zeros are dropped and very small or very large magnitudes fall
+    back to significant figures rather than fixed decimals.
+    """
+    if not isinstance(value, float):
+        return str(value)
+    if value != value or value in (float("inf"), float("-inf")):
+        return str(value)
+    if value and (abs(value) < 1e-3 or abs(value) >= 1e6):
+        return f"{value:.{precision}g}".replace("e+0", "e").replace("e-0", "e-")
+    return f"{value:.{precision}f}".rstrip("0").rstrip(".") or "0"
+
+
 def fmt_quantity(value: object, precision: int = 3) -> str:
     """Render a value for inline ``@val:`` substitution, units included."""
     if isinstance(value, ureg.Quantity):
-        magnitude = value.magnitude
         unit = f"{value.units:~P}".strip()
-        num = (f"{magnitude:.{precision}f}" if isinstance(magnitude, float)
-               else f"{magnitude}")
+        num = fmt_number(value.magnitude, precision)
         return f"{num} {unit}" if unit else num
     if isinstance(value, float):
-        return f"{value:.{precision}f}"
+        return fmt_number(value, precision)
     return str(value)

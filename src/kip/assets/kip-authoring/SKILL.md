@@ -33,32 +33,55 @@ Do not generate doc.py with another Python script. Markers delimit Python blocks
 d_pin = 32 * mm
 t_plate = 16 * mm
 
-# %% calc bearing "Bearing stress" unit=MPa
-sigma_br = P / (d_pin * t_plate)
+# %% calc bearing "Bearing stress"
+sigma_br = P / (d_pin * t_plate)      # -> MPa
+
+# %% table loads "Load cases"
 ```
+
+The last block is empty: it places the `loads` table built in the prelude.
 
 Marker syntax is `# %% kind id "Optional label" key=value`. IDs are unique Python
 identifiers. Old `# %% kip.calc id=bearing label="Bearing" result_unit=MPa` works.
 Blocks render in file order and execute in dependency order. Assign each result
 in one block; avoid hidden mutation between blocks. Units and math functions are
-bare names (`mm`, `kN`, `sqrt`), not dotted calls inside calculations. For unit
-conversion use `unit=MPa`, or `unit="I=mm**4, c=mm"`; avoid `.to()` in calc blocks.
-Put setup, imports and functions in the prelude. Rich-content blocks must assign
-their result to a variable. Text blocks contain a triple-quoted string, with
+bare names (`mm`, `kN`, `sqrt`), not dotted calls inside calculations. Name the
+unit a result is read in beside the equation, as `M = P * L    # -> kN*m`; avoid
+`.to()` in calc blocks (`unit=MPa` on the marker still works).
+Put setup, imports and functions in the prelude. A rich-content block either
+assigns its object or is empty, in which case it places the object already bound
+to the block's own id -- so a table built in the prelude needs only its marker
+line. Text blocks contain a triple-quoted string, with
 headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
 `@src:key`. A block ID and its output variable can differ.
 
 ## Content
 
-- `calculation`: bind a function decorated with `@calculation(units={...})` from
-  analysis.py. Set up its inputs before `# equations`, write ordinary straight-line
-  arithmetic after that marker, and end with `return locals()`. The function call
-  is not printed; Kip renders the validated arithmetic and computed values.
-  Access results as attributes. Use this kind for dotted calls; inline `calc`
-  retains its stricter syntax checks.
-- References use `Sources.load()` and `[sources.key]` tables in sources.toml.
-- `read_records(path)` loads a header-row `Inputs` worksheet; formulas are rejected
-  rather than relying on stale Excel caches. Resolve inputs relative to doc.py.
+- `calculation`: bind a function decorated with `@calculation` from analysis.py.
+  Set up its inputs before `# equations` and write ordinary straight-line
+  arithmetic after that marker, one `# -> unit` per result that needs a display
+  unit. `return locals()` is optional. The function call is not printed; Kip
+  renders the validated arithmetic and computed values. Access results as
+  attributes. Use this kind for dotted calls; inline `calc` retains its stricter
+  syntax checks.
+- `Constants.load("input/constants.xlsx")` reads a `key`/`value` sheet whose
+  optional `unit`, `description`, `basis`, `symbol` and `source` columns supply
+  everything else. Lookups (`C.rho_w`, `C["rho_w"]`) are pint quantities, so
+  never multiply a constant by a unit again; `C.value("body_d", mm)` gives a
+  plain float for CAD. `C.add(...)` defines a computed constant (a property
+  database, a fit) and `C.override(...)` replaces a workbook value on purpose.
+  `C.table("rho_w", "mu_w")` renders any slice; `C.format("{rho_w} at {mdot_n}")`
+  substitutes values into prose.
+- `Sheet.load(path, constants=C, unique="id", required=("target",))` reads any
+  other input sheet, interpolates `{constant}` cells, and performs the checks a
+  document would otherwise write by hand. `sheet.table()` renders it with the
+  header row as column titles; `hide=(...)` drops columns such as keys and URLs.
+  `sheet.sources(title="supplier_item")` turns catalogue rows into citations.
+- References use `Sources.load("sources.toml", "input/suppliers.xlsx")`, which
+  merges `[sources.key]` tables and `key`/`title`/`url`/`note` sheets.
+- `read_records(path)` remains the low-level reader for a header-row worksheet;
+  formulas are rejected rather than relying on stale Excel caches. Resolve
+  inputs relative to doc.py.
 - `Drawing.load(path)` supports SVG and PNG; `Drawing.grid([(label, drawing), ...])`
   composes views. Prefer these to project-specific XML/base64 wrappers.
 

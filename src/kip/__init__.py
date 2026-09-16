@@ -10,6 +10,7 @@ from .content import (
     Column, Drawing, Figure, Series, Source, Sources, Table, strip_units,
     Symbol, Math, nomenclature, plot,
 )
+from .sheets import Constant, Constants, Sheet
 from .req import (
     ControlledVar, Item, Requirement, Requirements,
     compliance_matrix, flowdown_table, requirements_table, variables_table,
@@ -30,6 +31,8 @@ __all__ = [
     "Symbol", "Math", "nomenclature", "plot",
     "build_pdf",
     "run_document", "calculation", "read_records",
+    # spreadsheet inputs
+    "Constants", "Constant", "Sheet",
     # requirements and controlled variables
     "Requirements", "Requirement", "ControlledVar", "Item",
     "compliance_matrix", "requirements_table", "variables_table",

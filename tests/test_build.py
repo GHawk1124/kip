@@ -71,7 +71,7 @@ def test_result_unit_mismatch_is_a_clear_error():
 def test_val_citation_resolves_to_a_live_value():
     doc = build(source=DOC, path="doc.py")
     text = doc.results["intro"].text
-    assert "112.500 MPa" in text
+    assert "112.5 MPa" in text
     assert "@val:" not in text
 
 

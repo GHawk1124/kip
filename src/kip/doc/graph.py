@@ -263,9 +263,15 @@ def analyze(
     """
     if provided is None:
         provided = default_provided()
+    from .blocks import CONTENT_KINDS
+
     for b in blocks:
         if b.is_code:
             b.defs, b.refs = analyze_code(b.source)
+            # An empty content cell places the object named by its id, so it
+            # must run after whatever builds that object.
+            if not b.source.strip() and b.kind in CONTENT_KINDS:
+                b.refs = frozenset({b.id})
             b.cites = ()
         else:
             refs, cites = analyze_text(b.source)

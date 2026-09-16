@@ -409,13 +409,26 @@ class Sources(dict):
             self[k] = v if isinstance(v, Source) else Source(**v)
 
     @classmethod
-    def load(cls, path="sources.toml"):
-        """Load [sources.key] tables relative to the document directory."""
+    def load(cls, *paths):
+        """Merge reference files, later ones winning, in one call.
+
+        A ``.toml`` file holds ``[sources.key]`` tables; a ``.xlsx`` sheet holds
+        ``key``, ``title``, ``url`` and ``note`` columns, so supplier and
+        catalogue references stay editable in the workbook they came from.
+        """
         import tomllib
         from .authoring import project_path
-        with project_path(path).open("rb") as stream:
-            data = tomllib.load(stream)
-        return cls(data.get("sources", {}))
+        merged: dict[str, Source] = {}
+        for path in (paths or ("sources.toml",)):
+            resolved = project_path(path)
+            if resolved.suffix.lower() in (".xlsx", ".xlsm"):
+                from .sheets import Sheet
+                merged.update(Sheet.load(resolved).sources())
+                continue
+            with resolved.open("rb") as stream:
+                data = tomllib.load(stream)
+            merged.update(cls(data.get("sources", {})))
+        return cls(merged)
 
 
 def nomenclature(entries: dict[str, str | tuple[str, str]], **options) -> Table:

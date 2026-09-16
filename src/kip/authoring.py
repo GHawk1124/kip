@@ -76,37 +76,95 @@ class Calculation:
             raise AttributeError(key) from exc
 
 
-def calculation(*, units=None, precision=3):
+def _equation_source(fn):
+    """Split a decorated function into (setup, rendered equations, returns?).
+
+    Everything after a ``# equations`` line is the arithmetic the document
+    shows; anything before it is setup that only feeds it.  Without the marker
+    the whole body is rendered.
+    """
+    source = textwrap.dedent(inspect.getsource(fn))
+    lines = source.splitlines()
+    tree = ast.parse(source)
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
+    marker = next((i for i, line in enumerate(lines)
+                   if line.strip() == "# equations"), None)
+
+    returns = isinstance(function.body[-1], ast.Return)
+    if returns:
+        tail = function.body[-1].value
+        if not (isinstance(tail, ast.Call) and isinstance(tail.func, ast.Name)
+                and tail.func.id == "locals" and not tail.args and not tail.keywords):
+            raise ValueError(
+                f"{fn.__name__}: a calculation returns nothing, or returns locals()")
+    start = marker + 1 if marker is not None else function.body[0].lineno - 1
+    end = function.body[-1].lineno - 1 if returns else len(lines)
+    return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns
+
+
+def calculation(fn=None, *, units=None, precision=3):
     """Render a function's equations and expose its computed local values.
 
-    Set up inputs before ``# equations``; put straight-line arithmetic after it
-    and end with ``return locals()``. The rendered arithmetic is validated by
-    the same rules as inline calculation cells. Unit conversion happens after
-    computation, just as for inline cells.
+    Set up inputs before ``# equations`` and write straight-line arithmetic
+    after it; the rendered arithmetic is validated by the same rules as inline
+    calculation cells.  Name the unit a result is read in beside the equation
+    that produces it::
+
+        @calculation
+        def flow(c):
+            rho_w = c.rho_w
+            d_face = c.active_d
+            # equations
+            A_face = pi * d_face**2 / 4          # -> mm^2
+            U_n = mdot_n / (rho_w * A_face)      # -> m/s
+            return locals()
+
+    ``return locals()`` is optional -- it is appended when absent.  ``units=``
+    remains as an override for a unit that cannot be written as a comment.
     """
     def decorate(fn):
-        source = textwrap.dedent(inspect.getsource(fn))
-        lines = source.splitlines()
-        marker = next((i for i, line in enumerate(lines) if line.strip() == "# equations"), None)
-        tree = ast.parse(source)
-        function = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
-        if marker is None or not isinstance(function.body[-1], ast.Return):
-            raise ValueError(f"{fn.__name__}: use # equations and return locals()")
-        tail = function.body[-1].value
-        if not (isinstance(tail, ast.Call) and isinstance(tail.func, ast.Name) and tail.func.id == "locals" and not tail.args and not tail.keywords):
-            raise ValueError(f"{fn.__name__}: final statement must be return locals()")
-        equations = textwrap.dedent("\n".join(lines[marker+1:function.body[-1].lineno-1]))
+        from .math.handcalc_bridge import display_units
+        tree, function, raw, returns = _equation_source(fn)
+        equations, annotated = display_units(raw)
+        conversions = annotated + list((units or {}).items())
+
         from .doc.blocks import Block
         from .doc.validate import validate_all, ValidationError
-        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=0, body_start=1, body_end=len(equations.splitlines()))
-        errors = [d for d in validate_all([block], inspect.getsourcefile(fn)) if d.severity == "error"]
+        path = inspect.getsourcefile(fn)
+        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=0,
+                      body_start=1, body_end=len(equations.splitlines()))
+        errors = [d for d in validate_all([block], path) if d.severity == "error"]
         if errors:
-            raise ValidationError(errors, inspect.getsourcefile(fn))
+            raise ValidationError(errors, path)
+
+        inner = fn
+        if not returns:
+            # Rewriting the tail is what lets the author stop writing it.
+            function.decorator_list = []
+            function.body.append(ast.Return(ast.Call(
+                func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[])))
+            module = ast.fix_missing_locations(
+                ast.Module(body=[function], type_ignores=[]))
+            scope: dict = {}
+            exec(compile(module, path or "<calculation>", "exec"),
+                 fn.__globals__, scope)
+            inner = scope[function.name]
+
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            values = fn(*args, **kwargs)
-            for name, unit in (units or {}).items():
-                values[name] = values[name].to(unit)
-            return Calculation(equations, values, units or {}, precision)
+            values = inner(*args, **kwargs)
+            for name, unit in conversions:
+                if name not in values:
+                    raise ValueError(
+                        f"{fn.__name__}: '# -> {unit}' names {name!r}, "
+                        "which this calculation does not assign")
+                try:
+                    values[name] = values[name].to(unit)
+                except AttributeError as exc:
+                    raise ValueError(
+                        f"{fn.__name__}: {name!r} is a plain number, so it "
+                        f"cannot be displayed in {unit}") from exc
+            return Calculation(equations, values, dict(conversions), precision)
         return wrapped
-    return decorate
+
+    return decorate(fn) if fn is not None else decorate

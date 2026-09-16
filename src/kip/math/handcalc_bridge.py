@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import ast
+import io
+import re
+import tokenize
 from dataclasses import dataclass, field
 
 from handcalcs.handcalcs import LatexRenderer
 
 from ..units import ureg
 
-__all__ = ["RenderedCalc", "render_calc", "last_assigned_names", "MITEX_VERSION"]
+__all__ = ["RenderedCalc", "render_calc", "last_assigned_names",
+           "display_units", "MITEX_VERSION"]
+
+#: ``sigma = M * c / I    # -> MPa`` asks for the result in MPa.
+_ARROW_RE = re.compile(r"^#\s*->\s*(?P<unit>\S.*?)\s*$")
 
 #: Earlier versions 0.2.4/0.2.5 fail against Typst 0.15 ("unknown variable: kai").
 MITEX_VERSION = "0.2.7"
@@ -53,16 +60,57 @@ def last_assigned_names(source: str) -> list[str]:
     return names
 
 
+def display_units(source: str) -> "tuple[str, list[tuple[str, str]]]":
+    """Split ``# -> unit`` annotations off the code they annotate.
+
+    The unit a result is *read in* belongs beside the equation that produces
+    it, the way it is written on paper -- not in a separate table of names the
+    author has to keep in step.  Returns the source with the annotations
+    removed (handcalcs would render them as stray comments) and the requested
+    conversions in source order.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
+        tree = ast.parse(source)
+    except (SyntaxError, tokenize.TokenError, IndentationError):
+        return source, []
+
+    assigned_at: dict[int, str] = {}
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)):
+            assigned_at[node.end_lineno or node.lineno] = node.targets[0].id
+
+    lines = source.splitlines()
+    requests: list[tuple[str, str]] = []
+    for token in tokens:
+        if token.type != tokenize.COMMENT:
+            continue
+        match = _ARROW_RE.match(token.string.strip())
+        if not match:
+            continue
+        row, col = token.start
+        name = assigned_at.get(row)
+        if name is None:
+            raise CalcRenderError(
+                f"line {row}: '# -> {match.group('unit')}' must follow an "
+                "assignment; it names the unit that result is displayed in"
+            )
+        requests.append((name, match.group("unit")))
+        lines[row - 1] = lines[row - 1][:col].rstrip()
+    return "\n".join(lines), requests
+
+
 def _convert_result(
     namespace: dict, name: str, unit: str
 ) -> tuple[bool, str | None]:
     """Convert ``namespace[name]`` to ``unit`` in place. Returns (ok, error)."""
     value = namespace.get(name)
     if value is None:
-        return False, f"block declares result_unit={unit} but defines no value"
+        return False, f"a display unit of {unit} was requested but {name!r} has no value"
     if not isinstance(value, ureg.Quantity):
         return False, (
-            f"block declares result_unit={unit} but {name!r} is a plain "
+            f"a display unit of {unit} was requested but {name!r} is a plain "
             f"{type(value).__name__}, not a quantity with units"
         )
     try:
