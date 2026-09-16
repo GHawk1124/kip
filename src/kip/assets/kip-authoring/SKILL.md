@@ -134,6 +134,9 @@ Edit `[page]` in layout.toml: `title`, `subtitle`, `author`, `project`, `documen
 outlines), `columns` (1 or 2). Default layout flows automatically. First text
 block `wrap_title=true` wraps alongside the metadata box. Marker `columns=2`
 switches subsequent blocks to two columns; `columns=1` restores full width.
-Use `pagebreak=true` for an intentional page start; `snap=false` is the explicit
-freeform exception to grid alignment. Avoid absolute positions unless requested.
+`pagebreak=` forces a page boundary: `before` (or `true`) starts a block on a new
+page, `after` ends a section on the block that closes it, `both` isolates a block.
+Prefer `after` when the break belongs to the content that ends, so a heading is
+never orphaned from the table it introduces. A trailing `after` adds no blank
+page. `snap=false` is the explicit freeform exception to grid alignment. Avoid absolute positions unless requested.
 All math and drawings remain vector; retain the grid alignment built into kip.

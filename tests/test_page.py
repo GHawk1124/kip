@@ -4,6 +4,7 @@ import pytest
 
 from kip.doc import build
 from kip.render import emit, render
+from kip.render.emitter import emit_body
 from kip.render.emitter import emit_debug
 from kip.render.layout import Layout, PageSpec, Position, auto_layout
 
@@ -117,3 +118,56 @@ def test_title_block_values_reach_the_pdf(tmp_path):
                  layout=Layout(page=spec(author="G. Comes", document="CALC-9")))
     text = pymupdf.open(out)[0].get_text()
     assert "G. Comes" in text and "CALC-9" in text
+
+
+def test_pagebreak_after_ends_a_section_without_marking_the_next_one():
+    source = '''from kip import *
+# %% text a "A" pagebreak=after
+"""First section."""
+
+# %% text b "B"
+"""Second section, on its own page."""
+'''
+    out = emit_body(build(source=source))
+    assert out.index("#pagebreak(weak: true)") > out.index("First section")
+    assert out.index("#pagebreak(weak: true)") < out.index("Second section")
+
+
+def test_a_trailing_pagebreak_after_adds_no_empty_page():
+    out = emit_body(build(source='from kip import *\n# %% text a "A" pagebreak=after\n"""Only."""\n'))
+    assert "#pagebreak" not in out
+
+
+def test_pagebreak_after_closes_the_column_block_first():
+    source = '''from kip import *
+# %% text a "A" columns=2
+"""Left."""
+
+# %% text b "B" pagebreak=after
+"""Right."""
+
+# %% text c "C"
+"""Next page."""
+'''
+    out = emit_body(build(source=source))
+    # the break must come after the closing bracket, never inside #columns(...)[
+    assert "]\n#pagebreak(weak: true)" in out
+
+
+def test_pagebreak_both_breaks_on_each_side():
+    source = '''from kip import *
+# %% text a "A"
+"""One."""
+
+# %% text b "B" pagebreak=both
+"""Alone."""
+
+# %% text c "C"
+"""Three."""
+'''
+    assert emit_body(build(source=source)).count("#pagebreak(weak: true)") == 2
+
+
+def test_an_unknown_pagebreak_value_is_rejected():
+    with pytest.raises(ValueError, match="pagebreak must be one of"):
+        emit_body(build(source='from kip import *\n# %% text a "A" pagebreak=maybe\n"""X."""\n'))

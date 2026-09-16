@@ -21,6 +21,9 @@ TYPST_LIB = TYPST / "lib"
 LILAQ_VERSION = "0.5.0"
 CETZ_VERSION = "0.4.2"
 
+#: Where a block's marker may force a page boundary. "true" is "before".
+_PAGE_BREAKS = ("false", "true", "before", "after", "both")
+
 # primitives
 
 
@@ -495,6 +498,7 @@ def emit_body(doc: Document, layout: Layout | None = None,
     flowed: list[str] = []
     flow_columns = layout.page.columns
     opened_columns = 1
+    pending_break = False
 
     def column_geometry(count):
         import math
@@ -560,12 +564,19 @@ def emit_body(doc: Document, layout: Layout | None = None,
                 f"box(width: {_num(pos.w)}mm)[\n{markup}\n])")
         else:
             page_break = block.meta.get("pagebreak", "false").lower()
-            if page_break not in ("true", "false"):
-                raise ValueError(f"block {block.id}: pagebreak must be true or false")
-            if opened_columns != flow_columns or page_break == "true":
+            if page_break not in _PAGE_BREAKS:
+                raise ValueError(
+                    f"block {block.id}: pagebreak must be one of "
+                    + ", ".join(_PAGE_BREAKS))
+            # A break requested *after* a block is carried to the next one, so
+            # it goes through the same path as one requested before -- which
+            # already closes an open column block rather than breaking inside it.
+            break_here = pending_break or page_break in ("true", "before", "both")
+            pending_break = page_break in ("after", "both")
+            if opened_columns != flow_columns or break_here:
                 if opened_columns > 1:
                     flowed.append("]")
-                if page_break == "true":
+                if break_here:
                     flowed.append("#pagebreak(weak: true)")
                 if flow_columns > 1:
                     gutter = column_geometry(flow_columns)[1]
