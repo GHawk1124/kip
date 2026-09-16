@@ -171,3 +171,97 @@ def test_pagebreak_both_breaks_on_each_side():
 def test_an_unknown_pagebreak_value_is_rejected():
     with pytest.raises(ValueError, match="pagebreak must be one of"):
         emit_body(build(source='from kip import *\n# %% text a "A" pagebreak=maybe\n"""X."""\n'))
+
+
+SECTIONS = '''from kip import *
+# %% text a "Requirements" section=1
+"""One."""
+
+# %% text b "Interpretation" section=2
+"""One point one."""
+
+# %% text c "Weld rim" section=3
+"""One point one point one."""
+
+# %% text d "Land face" section=4
+"""Four deep."""
+
+# %% text e "Architecture" section=1
+"""Two."""
+'''
+
+
+def _rendered(tmp_path, source, **kw):
+    doc = build(source=source, path="doc.py")
+    doc.path = tmp_path / "doc.py"
+    return pymupdf.open(render(doc, "s.pdf", **kw))
+
+
+def test_sections_number_themselves_to_any_depth(tmp_path):
+    page = _rendered(tmp_path, SECTIONS)[0]
+    text = page.get_text()
+    for number, title in (("1", "Requirements"), ("1.1", "Interpretation"),
+                          ("1.1.1", "Weld rim"), ("1.1.1.1", "Land face"),
+                          ("2", "Architecture")):
+        assert f"{number} {title}" in text
+
+
+def test_sections_become_the_pdf_outline(tmp_path):
+    assert [(level, title) for level, title, _
+            in _rendered(tmp_path, SECTIONS).get_toc()] == [
+        (1, "1 Requirements"), (2, "1.1 Interpretation"), (3, "1.1.1 Weld rim"),
+        (4, "1.1.1.1 Land face"), (1, "2 Architecture"),
+    ]
+
+
+def test_a_section_label_is_not_also_printed_as_a_block_title():
+    out = emit_body(build(source=SECTIONS))
+    assert "#kip-section(1)[Requirements]" in out
+    assert 'label: "Requirements"' not in out
+
+
+def test_the_numbering_pattern_is_configurable(tmp_path):
+    text = _rendered(tmp_path, SECTIONS,
+                     layout=Layout(page=PageSpec(section_numbering="I.A")))[0].get_text()
+    assert "I Requirements" in text and "I.A Interpretation" in text
+
+    text = _rendered(tmp_path, SECTIONS,
+                     layout=Layout(page=PageSpec(section_numbering="")))[0].get_text()
+    assert "Requirements" in text and "1 Requirements" not in text
+
+
+def test_a_wrapped_opening_section_does_not_start_the_count_short(tmp_path):
+    source = '''from kip import *
+# %% text a "Scope" section=1
+"""Opening prose wrapped beside the title block."""
+
+# %% text b "Detail" section=2
+"""Under it."""
+'''
+    text = _rendered(tmp_path, source,
+                     layout=Layout(page=PageSpec(title="T")))[0].get_text()
+    assert "1 Scope" in text and "1.1 Detail" in text
+
+
+def test_a_section_without_a_label_says_what_is_missing():
+    with pytest.raises(ValueError, match="needs a label"):
+        emit_body(build(source='from kip import *\n# %% text a section=1\n"""X."""\n'))
+
+
+def test_a_nonsense_section_level_is_rejected():
+    with pytest.raises(ValueError, match="whole number"):
+        emit_body(build(source='from kip import *\n# %% text a "A" section=deep\n"""X."""\n'))
+    with pytest.raises(ValueError, match="1 or more"):
+        emit_body(build(source='from kip import *\n# %% text a "A" section=0\n"""X."""\n'))
+
+
+def test_a_semicolon_after_a_citation_survives(tmp_path):
+    source = '''from kip import *
+refs = Sources(fm=Source(title="Fluid Mechanics"))
+# %% text a "Basis"
+"""The minor-loss form @src:fm; the coefficient is assumed."""
+
+# %% sources refs "References"
+'''
+    text = _rendered(tmp_path, source)[0].get_text()
+    assert "; the coefficient is assumed" in text

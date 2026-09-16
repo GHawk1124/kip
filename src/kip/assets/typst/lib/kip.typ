@@ -165,6 +165,11 @@
     spacing: 0pt, body)
 }))
 
+// A numbered section heading. Levels beyond the three styled below keep the
+// body size and simply indent through the numbering, which is what a deep
+// sub-sub-section wants: the number carries the hierarchy, not the type size.
+#let kip-section(level, body) = heading(level: level, body)
+
 #let block-title(label, color: none) = {
   if label != none and label != "" {
     block(spacing: 0pt, sticky: true, grid-cell(text(size: 7.2pt,
@@ -559,6 +564,7 @@
   grid-on: true,
   grid-step: 5mm,
   frames: false,
+  section-numbering: "1.1",
   font: ("Libertinus Serif", "DejaVu Serif", "Times New Roman"),
   size: 10pt,
   header-left: none,
@@ -615,18 +621,37 @@
   show math.equation.where(block: true): set block(spacing: grid-step)
 
   // Headings retain the common line metrics.
-  let heading-rule(hs, weight, style, ruled) = it => {
-    block(spacing: 0pt)[
-      #grid-cell(text(size: hs, weight: weight, style: style, it.body))
-      #if ruled { place(line(length: 100%, stroke: 0.5pt + kip-colors.rule)) }
-    ]
+  // One rule branching on level, rather than one rule per level: a document
+  // may nest as deeply as it likes, and levels past the third share a
+  // treatment because by then the number carries the hierarchy.
+  let heading-style(level) = if level == 1 {
+    (1.22 * size, "bold", "normal", true)
+  } else if level == 2 {
+    (1.06 * size, "bold", "normal", true)
+  } else {
+    (size, "semibold", "italic", false)
   }
 
-  set heading(numbering: none)
+  set heading(numbering: if section-numbering in (none, "") { none } else { section-numbering })
   show heading: set block(above: 0pt, below: 0pt)
-  show heading.where(level: 1): heading-rule(1.22 * size, "bold", "normal", true)
-  show heading.where(level: 2): heading-rule(1.06 * size, "bold", "normal", true)
-  show heading.where(level: 3): heading-rule(size, "semibold", "italic", false)
+  show heading: it => {
+    let (hs, weight, style, ruled) = heading-style(it.level)
+    let shown = if it.numbering == none { it.body } else {
+      [#counter(heading).display(it.numbering)#h(0.6em)#it.body]
+    }
+    // Whole grid cells of air above, so the separation never costs alignment;
+    // nothing below, because a heading belongs to what follows it. `sticky`
+    // keeps it off the bottom of a page, orphaned from its own section.
+    block(
+      above: if it.level == 1 { 2 * grid-step } else { grid-step },
+      below: 0pt, sticky: true,
+    )[
+      #grid-cell(text(size: hs, weight: weight, style: style, shown))
+      #if ruled {
+        place(bottom + left, line(length: 100%, stroke: 0.5pt + kip-colors.rule))
+      }
+    ]
+  }
 
   show link: it => text(fill: kip-colors.link, it)
 
@@ -647,7 +672,13 @@
         #title-content
         #v(grid-step)
         #kip-anchor(intro.id, "text")
-        #block-title(intro.label)
+        // The wrapped opening block is still a section when it says it is, so
+        // the numbering does not start one short.
+        #if intro.at("level", default: none) != none {
+          kip-section(intro.level)[#intro.label]
+        } else {
+          block-title(intro.label)
+        }
         #opening-flow(intro.body, narrow, calc.max(0pt, mh - th - grid-step - if intro.label != none { grid-step } else { 0pt }))
         #label("blk-" + intro.id)
       ]

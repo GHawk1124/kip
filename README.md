@@ -96,6 +96,18 @@ columns are the reference fields -- `key`, `title`, `author`, `publisher`,
 `@src:key`. `[sources.key]` tables in a `sources.toml` still load, and several
 files merge in one call.
 
+Sections number themselves. `section=N` makes a block's label a heading at that
+depth -- 1 a section, 2 a subsection, and as deep as you like:
+
+```python
+# %% text flow "Flow basis" section=1
+# %% text coeffs "Assumed resistance coefficients" section=2
+```
+
+The numbers, the spacing and the PDF outline come from the structure, so no
+number is ever typed into a label and none goes stale when a section moves.
+`section_numbering` in `[page]` sets the pattern; `""` turns numbering off.
+
 Standards and specifications are applicable documents, not references: put them
 on a `Documents` worksheet with a description, an organization and a number, and
 render it with `Sheet.load("input/references.xlsx", "Documents").table()`.

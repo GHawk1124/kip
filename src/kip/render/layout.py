@@ -33,6 +33,8 @@ class PageSpec:
     grid: bool = True
     grid_step: float = 5.0
     frames: bool = False
+    #: Typst numbering pattern for `section=` headings; "" or None turns it off.
+    section_numbering: str = "1.1"
     columns: int = 1
     gutter: float = 8.0
     font_size: float = 10.0
@@ -179,6 +181,7 @@ class Layout:
             grid=bool(raw_page.get("grid", True)),
             grid_step=float(_mm(raw_page.get("grid_step", 5))),
             frames=bool(raw_page.get("frames", False)),
+            section_numbering=str(raw_page.get("section_numbering", "1.1")),
             columns=int(raw_page.get("columns", 1)),
             gutter=float(_mm(raw_page.get("gutter", 8))),
             font_size=float(raw_page.get("font_size", 10)),
@@ -219,6 +222,7 @@ class Layout:
             ("paper", self.page.paper), ("margin", f"{self.page.margin:g}mm"),
             ("grid", self.page.grid), ("grid_step", f"{self.page.grid_step:g}mm"),
             ("frames", self.page.frames),
+            ("section_numbering", self.page.section_numbering),
             ("columns", self.page.columns), ("gutter", f"{self.page.gutter:g}mm"),
             ("font_size", self.page.font_size),
             ("marking", self.page.marking),

@@ -100,27 +100,37 @@ def _resolve_refs(text: str, known_blocks: dict[str, str],
     fail the whole build over one typo in prose. ``kip check`` reports dangling
     references separately.
     """
+    def tail(m):
+        """A semicolon straight after ``#call(...)`` is eaten by Typst.
+
+        In markup a ``#`` expression is code, and ``;`` ends a code statement,
+        so "see @src:white; the rest" silently loses its semicolon. Wrapping it
+        as content puts it back in markup where the author wrote it.
+        """
+        return "#[;]" if m.group("tail") else ""
+
     def blk(m):
         target = m.group(1)
         if target not in known_blocks:
-            return target
+            return target + m.group("tail")
         shown = known_blocks[target] or target
-        return f"#link(label({_s('blk-' + target)}))[{shown}]"
+        return f"#link(label({_s('blk-' + target)}))[{shown}]" + tail(m)
 
     def req(m):
         return ("#box(fill: kip-colors.chip, inset: (x: 3pt, y: 0pt), "
-                f"radius: 2pt)[{m.group(1)}]")
+                f"radius: 2pt)[{m.group(1)}]") + tail(m)
 
     def src(m):
         entry = sources.get(m.group(1))
         if entry is None:
-            return m.group(1)
+            return m.group(1) + m.group("tail")
         n, source = entry
-        return f"#kip-cite({n}, {_s(source.short())}, url: {_opt(source.url)})"
+        return (f"#kip-cite({n}, {_s(source.short())}, url: {_opt(source.url)})"
+                + tail(m))
 
-    text = re.sub(r"@blk:([A-Za-z_][A-Za-z0-9_]*)", blk, text)
-    text = re.sub(r"@src:([A-Za-z_][A-Za-z0-9_\-]*)", src, text)
-    text = re.sub(r"@req:([A-Za-z][A-Za-z0-9_\-]*)", req, text)
+    text = re.sub(r"@blk:([A-Za-z_][A-Za-z0-9_]*)(?P<tail>;?)", blk, text)
+    text = re.sub(r"@src:([A-Za-z_][A-Za-z0-9_\-]*)(?P<tail>;?)", src, text)
+    text = re.sub(r"@req:([A-Za-z][A-Za-z0-9_\-]*)(?P<tail>;?)", req, text)
     return text
 
 # rich content
@@ -320,11 +330,31 @@ def _calc_latex(result: BlockResult, width_mm: float | None) -> str:
     return result.latex or ""
 
 
+def _section_heading(block) -> str:
+    """Markup for a ``section=N`` block's numbered heading, or ``""``.
+
+    The heading is emitted beside the block rather than inside it so that it is
+    a real Typst heading: numbering, the PDF outline and any future table of
+    contents then follow from the document's own structure.
+    """
+    level = block.section
+    label = block.meta.get("label")
+    if level is None:
+        return ""
+    if not label:
+        raise ValueError(
+            f"block {block.id}: section={level} needs a label to use as the "
+            'heading, e.g. # %% text intro "Requirements" section=1')
+    return f"#kip-section({level})[{label}]\n"
+
+
 def _emit_block(block, result: BlockResult, known: dict[str, str],
                 sources: dict[str, tuple[int, Source]],
                 assets: dict[str, str], width_mm: float | None = None) -> str:
     bid = _s(block.id)
-    lbl = _opt(block.meta.get("label"))
+    # A section block's label is its heading, emitted above the block; leaving
+    # it here as well would print the same words twice.
+    lbl = "none" if block.section else _opt(block.meta.get("label"))
 
     if result.failed:
         return (f"#kip-error(id: {bid}, "
@@ -535,6 +565,7 @@ def emit_body(doc: Document, layout: Layout | None = None,
         markup = _emit_block(block, result, known, sources, assets, width_mm)
         if not markup:
             continue
+        heading = _section_heading(block)
         # Template options are also available on the Python block marker.
         options = []
         for key in ("snap", "frame", "panel"):
@@ -561,7 +592,7 @@ def emit_body(doc: Document, layout: Layout | None = None,
             placed.setdefault(max(1, pos.page), []).append(
                 f"#place(top + left, dx: {_num(pos.x - margin - (layout.page.size[0] % layout.page.grid_step) / 2)}mm, "
                 f"dy: {_num(y - max(margin, 3 * layout.page.grid_step) - ((layout.page.size[1] % layout.page.grid_step) / 2 if block.meta.get("snap", "true").lower() == "false" else 0))}mm, "
-                f"box(width: {_num(pos.w)}mm)[\n{markup}\n])")
+                f"box(width: {_num(pos.w)}mm)[\n{heading}{markup}\n])")
         else:
             page_break = block.meta.get("pagebreak", "false").lower()
             if page_break not in _PAGE_BREAKS:
@@ -582,6 +613,8 @@ def emit_body(doc: Document, layout: Layout | None = None,
                     gutter = column_geometry(flow_columns)[1]
                     flowed.append(f"#columns({flow_columns}, gutter: {_num(gutter)}mm)[")
                 opened_columns = flow_columns
+            if heading:
+                flowed.append(heading)
             flowed.append(markup)
             flowed.append("")
 
@@ -639,7 +672,10 @@ def emit(doc: Document, layout: Layout | None = None,
             intro_id = block.id
             known = {b.id: b.meta.get("label", "") for b in doc.blocks}
             content = _resolve_refs(_markdown_to_typst(result.text or ""), known, collect_sources(doc))
-            intro = f"(id: {_s(block.id)}, label: {_opt(block.meta.get('label'))}, body: [{content}])"
+            intro = (f"(id: {_s(block.id)}, "
+                     f"label: {_opt(block.meta.get('label'))}, "
+                     f"level: {block.section if block.section else 'none'}, "
+                     f"body: [{content}])")
 
     preamble = "\n".join([
         f'#import "@preview/mitex:{MITEX_VERSION}": *',
@@ -657,6 +693,7 @@ def emit(doc: Document, layout: Layout | None = None,
         f"  grid-on: {'true' if page.grid else 'false'},",
         f"  grid-step: {_num(page.grid_step)}mm,",
         f"  frames: {'true' if page.frames else 'false'},",
+        f"  section-numbering: {_opt(page.section_numbering)},",
         f"  size: {_num(page.font_size)}pt,",
         f"  header-left: {_opt(page.resolved_header_left())},",
         f"  header-right: {_opt(page.resolved_header_right())},",

@@ -80,7 +80,7 @@ sketch = Drawing(width=88, length="0.62cm", body="""
   content((3, -1.15), text(size: 7pt, fill: dim)[$w$])
 """)
 
-# %% text method "Method"
+# %% text method "Method" section=1
 """
 ## Governing relations
 
@@ -185,7 +185,7 @@ reqs.verify("REQ-015", sigma_nt / sigma_br, "< 1", evidence="netsection")
 reqs.verify("REQ-016", sigma_coupon_min, ">= sigma_y_min", evidence="coupon")
 compliance = compliance_matrix(reqs)
 
-# %% text conclusion "Conclusion"
+# %% text conclusion "Conclusion" section=1
 """
 ## Result
 
@@ -198,7 +198,7 @@ as drawn in @blk:sketch. Design factors follow @src:asme.
 # %% sources refs "References" columns=1
 refs = Sources.load()
 
-# %% text cad_intro "CAD definition" columns=1 pagebreak=true
+# %% text cad_intro "CAD definition" section=1 columns=1 pagebreak=true
 """
 ## Model and drawing exports
 

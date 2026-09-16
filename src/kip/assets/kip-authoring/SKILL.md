@@ -131,9 +131,16 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
 
 Edit `[page]` in layout.toml: `title`, `subtitle`, `author`, `project`, `document`,
 `revision`, `date`, `checker`, `marking`, `grid_step` (mm), `frames` (opt-in section
-outlines), `columns` (1 or 2). Default layout flows automatically. First text
+outlines), `section_numbering`, `columns` (1 or 2). Default layout flows automatically. First text
 block `wrap_title=true` wraps alongside the metadata box. Marker `columns=2`
 switches subsequent blocks to two columns; `columns=1` restores full width.
+`section=N` turns a block's label into a numbered heading: 1 a section, 2 a
+subsection, 3 and beyond as deep as the document needs. Numbering, spacing and
+the PDF outline follow from it, so never type section numbers into a label.
+Use it on the text block that opens a section; a table's or figure's label stays
+a run-in caption. `section_numbering` in `[page]` sets the pattern ("1.1" by
+default, "I.A" for roman/letter, "" to switch numbering off).
+
 `pagebreak=` forces a page boundary: `before` (or `true`) starts a block on a new
 page, `after` ends a section on the block that closes it, `both` isolates a block.
 Prefer `after` when the break belongs to the content that ends, so a heading is

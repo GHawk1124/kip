@@ -108,6 +108,27 @@ class Block:
         return out
 
     @property
+    def section(self) -> int | None:
+        """Heading depth from ``section=N``: 1 is a section, 2 a subsection, ...
+
+        The block's label becomes a real numbered heading at that depth instead
+        of a run-in block title, so the numbering -- and the PDF outline -- come
+        from the document's structure rather than from numbers typed by hand.
+        """
+        raw = self.meta.get("section")
+        if raw is None:
+            return None
+        try:
+            level = int(raw)
+        except ValueError:
+            raise ValueError(
+                f"block {self.id}: section={raw!r} must be a whole number, "
+                "1 for a section, 2 for a subsection, and so on") from None
+        if level < 1:
+            raise ValueError(f"block {self.id}: section must be 1 or more")
+        return level
+
+    @property
     def precision(self) -> int:
         return int(self.meta.get("precision", 3))
 
