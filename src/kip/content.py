@@ -287,10 +287,8 @@ class Table:
             ws.column_dimensions[get_column_letter(j)].width = min(32, width)
         ws.freeze_panes = "A2"
 
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        wb.save(p)
-        return p
+        from .sheets import save_workbook
+        return save_workbook(wb, path)
 
 # drawings
 

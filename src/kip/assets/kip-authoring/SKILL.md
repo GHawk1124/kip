@@ -77,8 +77,19 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
   document would otherwise write by hand. `sheet.table()` renders it with the
   header row as column titles; `hide=(...)` drops columns such as keys and URLs.
   `sheet.sources(title="supplier_item")` turns catalogue rows into citations.
-- References use `Sources.load("sources.toml", "input/suppliers.xlsx")`, which
-  merges `[sources.key]` tables and `key`/`title`/`url`/`note` sheets.
+- References live in a workbook: `Sources.load("input/references.xlsx")`. Each
+  `Source` field reads the column of the same name (`key`, `title`, `author`,
+  `publisher`, `year`, `section`, `url`, `note`); empty cells stay absent.
+  `Sources.load()` merges several files, including `[sources.key]` TOML tables.
+  Standards and specifications are not references -- put them on a `Documents`
+  worksheet (document description, organization, number) and render it with
+  `Sheet.load("input/references.xlsx", "Documents").table()`.
+- Every equation that is not definitional cites its source in the surrounding
+  text with `@src:key`. Do not invent a URL, edition or table number; give the
+  title, author and publisher and say in the note what is not yet pinned.
+- `save_workbook(wb, path)` writes an xlsx with no creator, timestamps or tool
+  identity, so a regenerated input file differs only when its data differs.
+  `Table(xlsx=...)` exports already go through it.
 - `read_records(path)` remains the low-level reader for a header-row worksheet;
   formulas are rejected rather than relying on stale Excel caches. Resolve
   inputs relative to doc.py.

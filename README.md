@@ -12,7 +12,7 @@ uv run doc.py
 
 Edit `doc.py` directly. Put CAD in `cad.py` and optional reusable computations in
 `analysis.py`. `run_document` supplies standard headers and title wrapping;
-`layout.toml` is optional. References live in `sources.toml`. Output goes in `output/`.
+`layout.toml` is optional. Inputs and references are workbooks under `input/`. Output goes in `output/`.
 
 - `kip new name --template requirements` starts a requirements document.
 - `kip new name --template showcase` demonstrates all features, including CAD.
@@ -90,16 +90,18 @@ views with `Drawing.load(...)`, and compose labeled views with `Drawing.grid(...
 All file loaders resolve relative to the document, including builds from another
 working directory. Mass-flow symbols such as `mdot_n` render with an overdot.
 
-`Sources.load()` reads the standard `sources.toml`:
+`Sources.load("input/references.xlsx")` reads a references workbook whose
+columns are the reference fields -- `key`, `title`, `author`, `publisher`,
+`year`, `section`, `url`, `note`. Bind it in a `sources` cell and cite it with
+`@src:key`. `[sources.key]` tables in a `sources.toml` still load, and several
+files merge in one call.
 
-```toml
-[sources.reference]
-title = "Reference title"
-url = "https://example.com/reference"
-note = "What this source supports"
-```
+Standards and specifications are applicable documents, not references: put them
+on a `Documents` worksheet with a description, an organization and a number, and
+render it with `Sheet.load("input/references.xlsx", "Documents").table()`.
 
-Bind it in a `sources` cell and cite it with `@src:reference`. The first text cell
+Generated workbooks carry no creator, timestamps or tool identity, so
+regenerating an unchanged input produces identical bytes. The first text cell
 wraps beneath the title by default; `wrap_title=false` opts out. Existing inline
 calculations, `Sources(...)` objects and layout files remain supported.
 

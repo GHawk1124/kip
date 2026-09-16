@@ -19,16 +19,20 @@ rather than a wrong number in the PDF.
 
 from __future__ import annotations
 
+import datetime
+import io
 import re
+import zipfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Iterator
 
 from .content import Column, Source, Symbol, Table
 from .units import fmt_quantity, ureg
 
-__all__ = ["Constant", "Constants", "Sheet", "parse_unit", "slug"]
+__all__ = ["Constant", "Constants", "Sheet", "parse_unit", "save_workbook",
+           "slug"]
 
 _TEMPLATE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::(\d+))?\}")
 #: ``kg/m3`` is how a unit is written in a spreadsheet; pint wants ``kg/m**3``.
@@ -41,6 +45,55 @@ def slug(title: Any) -> str:
     if not out:
         raise ValueError(f"column heading {title!r} has no usable name")
     return out if not out[0].isdigit() else f"c_{out}"
+
+
+#: A pinned date for generated workbooks. Any fixed value would do.
+_FIXED_TIME = datetime.datetime(1980, 1, 1)
+
+#: Document properties, emptied. openpyxl stamps the save time into the one it
+#: writes, so the file is substituted rather than configured.
+_BLANK_CORE = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<cp:coreProperties'
+    ' xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
+    ' xmlns:dc="http://purl.org/dc/elements/1.1/"'
+    ' xmlns:dcterms="http://purl.org/dc/terms/"'
+    ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>'
+).encode()
+
+_BLANK_APP = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/'
+    '2006/extended-properties"/>'
+).encode()
+
+_BLANK_PARTS = {"docProps/core.xml": _BLANK_CORE, "docProps/app.xml": _BLANK_APP}
+
+
+def save_workbook(workbook, path: "str | Path") -> Path:
+    """Write a workbook carrying no authorship, timestamps or tool identity.
+
+    A generated input file should differ only when its data differs: whoever
+    ran the script, when they ran it and what wrote it are not part of the
+    design.  Those properties are emptied and every zip entry date is pinned,
+    so rebuilding an unchanged workbook produces identical bytes.
+    """
+    workbook.properties.creator = ""
+    workbook.properties.lastModifiedBy = ""
+    workbook.properties.created = workbook.properties.modified = _FIXED_TIME
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(buffer) as source, \
+            zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as out:
+        for name in sorted(source.namelist()):
+            entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o600 << 16
+            out.writestr(entry, _BLANK_PARTS.get(name) or source.read(name))
+    return path
 
 
 def parse_unit(text: Any) -> Any:
@@ -350,16 +403,28 @@ class Sheet(Sequence):
         rows = [[row.get(k) for k in chosen] for row in self._records]
         return Table(columns=columns, rows=rows, **options)
 
-    def sources(self, key: str = "key", title: str = "title", url: str = "url",
-                note: str = "note") -> "dict[str, Source]":
-        """Citable sources keyed by a column, for ``@src:`` citations."""
+    def sources(self, key: str = "key", **columns: str) -> "dict[str, Source]":
+        """Citable sources keyed by a column, for ``@src:`` citations.
+
+        Every :class:`~kip.content.Source` field reads the column of the same
+        name, so a references workbook with ``title``, ``author``,
+        ``publisher``, ``year``, ``section``, ``url`` and ``note`` columns needs
+        no mapping at all.  A sheet that calls them something else says so:
+        ``sheet.sources(title="supplier_item", note="catalog_basis")``.
+        """
         self.require_unique(key)
+        mapping = {f.name: columns.get(f.name, f.name) for f in fields(Source)}
+        for column in columns.values():
+            self._check_column(column)
+
         out: "dict[str, Source]" = {}
         for row in self._records:
-            out[str(row[key])] = Source(
-                title=str(row.get(title, "") or ""),
-                url=(str(row[url]) if row.get(url) else None),
-                note=str(row.get(note, "") or "") or None)
+            values = {}
+            for field, column in mapping.items():
+                cell = row.get(column)
+                values[field] = str(cell) if cell not in (None, "") else None
+            values["title"] = values["title"] or ""
+            out[str(row[key])] = Source(**values)
         return out
 
     def records(self) -> "list[dict]":

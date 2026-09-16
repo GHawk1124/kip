@@ -210,3 +210,66 @@ def test_fmt_quantity_does_not_pad_or_lose_digits():
     assert fmt_quantity(650.0 * ureg.psi) == "650 psi"
     assert fmt_quantity(0.000979 * ureg.Pa) == "0.000979 Pa"
     assert fmt_quantity(997.99 * ureg.kg) == "997.99 kg"
+
+
+# generated workbooks
+
+
+def test_a_saved_workbook_carries_no_metadata_and_is_reproducible(tmp_path):
+    import zipfile
+
+    from kip.sheets import save_workbook
+
+    def build(path):
+        wb = Workbook()
+        wb.active.title = "Inputs"
+        wb.active.append(["key", "value"])
+        wb.active.append(["rho", 997.99])
+        return save_workbook(wb, path)
+
+    first, second = build(tmp_path / "a.xlsx"), build(tmp_path / "b.xlsx")
+    assert first.read_bytes() == second.read_bytes()
+
+    with zipfile.ZipFile(first) as zf:
+        assert {entry.date_time for entry in zf.infolist()} == {(1980, 1, 1, 0, 0, 0)}
+        core = zf.read("docProps/core.xml").decode()
+        assert "openpyxl" not in core and "dcterms:modified" not in core
+        assert "Openpyxl" not in zf.read("docProps/app.xml").decode()
+
+    # still a workbook kip can read back
+    assert Sheet.load(first)[0] == {"key": "rho", "value": 997.99}
+
+
+def test_a_references_workbook_fills_every_source_field(tmp_path):
+    path = workbook(
+        tmp_path, "references.xlsx",
+        ["key", "title", "author", "publisher", "year", "section", "url", "note"],
+        [("armour", "Fluid Flow Through Woven Screens", "Armour and Cannon",
+          "AIChE Journal", 1968, "14(3)", "https://example.invalid", "Screen model"),
+         ("roark", "Roark's Formulas", "Young", "McGraw-Hill", "", "", "", "")],
+    )
+    refs = Sources.load(path)
+    assert refs["armour"].author == "Armour and Cannon"
+    assert refs["armour"].year == "1968"
+    assert refs["armour"].section == "14(3)"
+    # empty cells stay absent rather than becoming empty strings in the listing
+    assert refs["roark"].year is None
+    assert refs["roark"].full() == "Young, Roark's Formulas, McGraw-Hill"
+
+
+def test_a_second_worksheet_is_read_by_name(tmp_path):
+    wb = Workbook()
+    wb.active.title = "Inputs"
+    wb.active.append(["key", "title"])
+    wb.active.append(["a", "A"])
+    docs = wb.create_sheet("Documents")
+    for row in (["Document", "Organization", "Number"],
+                ["Multi-pass filter evaluation", "ISO", "16889:2022"]):
+        docs.append(row)
+    path = tmp_path / "references.xlsx"
+    wb.save(path)
+
+    sheet = Sheet.load(path, "Documents", unique="number")
+    assert [str(c.title) for c in sheet.table().columns] == [
+        "Document", "Organization", "Number"]
+    assert sheet[0]["organization"] == "ISO"
