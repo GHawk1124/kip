@@ -101,6 +101,53 @@ def display_units(source: str) -> "tuple[str, list[tuple[str, str]]]":
     return "\n".join(lines), requests
 
 
+class _Unmangled:
+    """A quantity handed to handcalcs with an underscore-free ``str()``.
+
+    handcalcs turns underscores in a substituted value into nested subscripts
+    before it ever formats the value, so any pint unit whose long name has one
+    is wrecked: psi is ``pound_force_per_square_inch``, and an equation
+    substituting it printed ``0.4842499437890715
+    pound_{force_{per_{square_{inch}}}}`` instead of ``0.484 psi``. It hits
+    degF, lbf and BTU the same way.
+
+    Only ``str()`` is replaced, with pint's compact form; ``__format__``
+    delegates untouched, so handcalcs' own rounding and its ``~L`` formatter
+    still produce the printed value.
+    """
+
+    __slots__ = ("quantity",)
+
+    def __init__(self, quantity):
+        self.quantity = quantity
+
+    def __format__(self, spec: str) -> str:
+        return format(self.quantity, spec)
+
+    def __str__(self) -> str:
+        # A unit with no compact form keeps its underscores; a space is a
+        # cosmetic loss, nested subscripts are not.
+        return f"{self.quantity:~P}".replace("_", " ")
+
+    def __repr__(self) -> str:
+        return str(self)
+
+
+def _renderable(namespace: dict) -> dict:
+    """The namespace as handcalcs should see it, mangle-proof units and all.
+
+    Units are wrapped as well as quantities: a bare ``psi`` written in an
+    equation is a :class:`pint.Unit`, and its long name carries the same
+    underscores.
+    """
+    return {
+        name: (_Unmangled(value)
+               if isinstance(value, (ureg.Quantity, ureg.Unit)) and "_" in str(value)
+               else value)
+        for name, value in namespace.items()
+    }
+
+
 def _convert_result(
     namespace: dict, name: str, unit: str
 ) -> tuple[bool, str | None]:
@@ -161,9 +208,11 @@ def render_calc(
             raise CalcRenderError(err or "unit conversion failed")
         converted[target] = unit
 
+    shown = _renderable(namespace)
+
     def _render(mode: str) -> str:
         args = {"override": mode, "precision": precision, "sci_not": None}
-        return _strip_wrapper(LatexRenderer(source, namespace, args).render())
+        return _strip_wrapper(LatexRenderer(source, shown, args).render())
 
     try:
         latex = _render(override)

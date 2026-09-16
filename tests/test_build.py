@@ -233,3 +233,48 @@ def test_scaffolded_project_builds(tmp_path):
     assert not doc.warnings, [d.message for d in doc.warnings]
     out = render(doc, "out.pdf", layout=Layout())
     assert out.stat().st_size > 0
+
+
+def test_units_whose_long_name_has_underscores_render_as_symbols():
+    """handcalcs subscripts underscores in a substituted value before formatting.
+
+    psi is ``pound_force_per_square_inch``, so it printed at full precision as
+    ``pound_{force_{per_{square_{inch}}}}`` rather than ``0.484 psi``.
+    """
+    doc = build(source='''from kip import *
+# %% calc clean "Clean"
+dp_clean = 0.4842499437890715 * psi
+
+# %% calc loaded "Loaded"
+dp_cake = 0.4115 * psi
+dp_total = dp_clean + dp_cake
+''')
+    latex = doc.results["loaded"].latex
+    assert "pound" not in latex
+    # the substituted value is rounded, not carried at full precision
+    assert "0.4842499437890715" not in latex
+    assert r"0.484\ \mathrm{psi}" in latex
+
+
+def test_the_same_holds_for_a_bare_unit_name_in_an_equation():
+    """A bare `psi` in an equation is a pint Unit, whose long name has them too."""
+    doc = build(source='''from kip import *
+# %% calc bearing "Bearing"
+F = 250.0 * lbf
+A = 2.0 * inch**2
+p_brg = F / A
+''')
+    latex = doc.results["bearing"].latex
+    assert "force_" not in latex and "pound" not in latex
+    assert r"\mathrm{lbf}" in latex
+
+
+def test_a_plain_unit_still_renders_as_it_did():
+    doc = build(source='''from kip import *
+# %% calc bend "Bend"
+P = 2.0 * kN
+L = 100.0 * mm
+M = P * L
+''')
+    latex = doc.results["bend"].latex
+    assert r"\mathrm{kN}" in latex and r"\mathrm{mm}" in latex
