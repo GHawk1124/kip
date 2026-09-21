@@ -1,6 +1,6 @@
 [page]
 title = "F200 / FLUID FILTER"
-subtitle = "Titanium housing · stainless media pack"
+subtitle = "Seven components. One pressure-boundary weld."
 document = "F200-COMP-001"
 revision = "A"
 date = "2026-09-21"
@@ -8,6 +8,5 @@ author = "Engineering concept"
 checker = "Review required"
 project = "Fluid filtration"
 marking = "DEVELOPMENT CONCEPT / CALIBRATION OPEN"
-font_size = 10
-columns = 2
-gutter = "10mm"
+font_size = 9
+columns = 1

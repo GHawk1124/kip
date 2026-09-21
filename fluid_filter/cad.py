@@ -43,8 +43,17 @@ def generate():
     (out/"cad").mkdir(parents=True,exist_ok=True)
     bd.export_step(assembly,out/"cad/fluid_filter.step")
     bd.export_step(bd.Part(parts[0].wrapped),out/"cad/housing_half.step")
-    section = cad_section(assembly,bd.Plane.XZ,dxf="axial_section.dxf")
-    views = {"assembly":cad_view(assembly),"section":section}
+    offsets = (36, 23, 12, 0, -12, -23, -36)
+    exploded = bd.Compound(children=[bd.Pos(Z=z) * part for z, part in zip(offsets, parts)])
+    section = cad_section(assembly, bd.Plane.XZ, dxf="axial_section.dxf")
+    views = {
+        "assembly": cad_view(assembly, "iso"),
+        "exploded": cad_view(exploded, "iso"),
+        "front": cad_view(assembly, "front"),
+        "end": cad_view(assembly, "top"),
+        "section": section,
+        "housing": cad_view(parts[0], "iso"),
+    }
     for name,drawing in views.items():
         (assets/f"{name}.svg").write_bytes(drawing.svg)
         for filename,data in drawing.attachments.items():

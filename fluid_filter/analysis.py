@@ -5,6 +5,7 @@ import math
 import tomllib
 
 import numpy as np
+from math import sqrt
 from kip import Constants, Sheet, Table, Column, Figure, calculation, mm, m, kg, s, Pa, psi, MPa, lb, um, pi
 from kip.packet import UnavailableInput
 from kip.sheets import parse_unit
@@ -138,6 +139,110 @@ def flow(c):
     U_s = mdot_s / (rho * A_face)             # -> m/s
 
 
+@calculation
+def bore_flow(c, water):
+    d_i, rho = water.d_i, water.rho
+    mdot_n, mdot_s = c.mdot_n, c.mdot_s
+    # equations
+    A_bore = pi * d_i**2 / 4                  # -> mm^2
+    V_n = mdot_n / (rho * A_bore)             # -> m/s
+    V_s = mdot_s / (rho * A_bore)             # -> m/s
+    q_n = rho * V_n**2 / 2                    # -> psi
+    q_s = rho * V_s**2 / 2                    # -> psi
+
+
+@calculation
+def reference_screen(c, water):
+    """Worked clean-screen loss for the tightest published cloth, 200 x 1400."""
+    row = next(r for r in sheet("ReferenceScreens") if str(r["screen"]) == "200 x 1400")
+    Da = float(row["da_um"]) * um
+    L = float(row["l_mm"]) * mm
+    A1 = float(row["a1"])
+    A2 = float(row["a2"])
+    positive(Da, m, "Average capillary diameter")
+    positive(L, m, "Cloth thickness")
+    if A1 <= 0 or A2 < 0 or not all(map(math.isfinite, (A1, A2))):
+        raise ValueError("Reference coefficients must be finite, with A1 > 0 and A2 >= 0")
+    rho, mu = c.rho, c.mu
+    U_n, U_s = water.U_n, water.U_s
+    # equations
+    Cv = A1 * L / Da**2                                    # -> 1/m
+    Ci = A2 * L / Da                                       # -> 1
+    dp_n = Cv * mu * U_n + Ci * rho * U_n**2               # -> psi
+    dp_s = Cv * mu * U_s + Ci * rho * U_s**2               # -> psi
+
+
+@calculation
+def housing_loss(c, bore):
+    """Illustrative housing loss at K = 1. The sweep table carries the other values."""
+    q_n, q_s = bore.q_n, bore.q_s
+    K = next(v for v in sweep("inlet_K") if abs(float(v.magnitude) - 1) < 1e-9)
+    positive(K, "", "Inlet K", zero=True)
+    # equations
+    dp_housing_n = K * q_n                    # -> psi
+    dp_housing_s = K * q_s                    # -> psi
+
+
+@calculation
+def blocked_drop(c, water, screen):
+    Cv, Ci = screen.Cv, screen.Ci
+    mu, rho, U_n = c.mu, c.rho, water.U_n
+    b = next(v for v in sweep("blockage") if abs(float(v.magnitude) - 0.5) < 1e-9)
+    # equations
+    F = 1 - b
+    dp_blocked = Cv * mu * U_n / F + Ci * rho * U_n**2 / F**2    # -> psi
+
+
+@calculation
+def loaded_drop(c, water, screen):
+    mu, A_face, U_n = c.mu, water.A_face, water.U_n
+    m_d = c.dirt_mass
+    dp_clean = screen.dp_n
+    alpha = next(v for v in sweep("cake_alpha") if abs(v.to(m/kg).magnitude - 1e9) < 1)
+    positive(alpha, m/kg, "Specific cake resistance", zero=True)
+    positive(m_d, kg, "Retained dirt mass", zero=True)
+    # equations
+    dp_cake = mu * U_n * alpha * m_d / A_face     # -> psi
+    dp_loaded = dp_clean + dp_cake                # -> psi
+
+
+@calculation(precision=2)
+def boundary(c, water):
+    p_proof, p_burst = c.p_proof, c.p_burst
+    Sy, Su = c.Sy, c.Su
+    d_o, d_i = c.stub_od, water.d_i
+    d_body, d_pocket = c.body_d, c.pocket_d
+    # equations
+    sigma_stub_proof = sqrt(3) * p_proof * d_o**2 / (d_o**2 - d_i**2)           # -> MPa
+    sigma_stub_burst = sqrt(3) * p_burst * d_o**2 / (d_o**2 - d_i**2)           # -> MPa
+    sigma_rim_proof = sqrt(3) * p_proof * d_body**2 / (d_body**2 - d_pocket**2) # -> MPa
+    sigma_rim_burst = sqrt(3) * p_burst * d_body**2 / (d_body**2 - d_pocket**2) # -> MPa
+    MS_stub_proof = Sy / sigma_stub_proof - 1
+    MS_stub_burst = Su / sigma_stub_burst - 1
+    MS_rim_proof = Sy / sigma_rim_proof - 1
+    MS_rim_burst = Su / sigma_rim_burst - 1
+
+
+@calculation
+def assembly_mass(c):
+    V_half = housing_volume(c)
+    rho_ti, rho_ss = c.rho_ti, c.rho_ss
+    d_pack, d_face = c.frame_d, c.active_d
+    t_frame = c.frame_raw_t
+    w_coarse, w_fine = c.coarse_areal_mass, c.fine_areal_mass
+    growth, m_limit = c.growth_factor, c.mass_limit
+    # equations
+    A_pack = pi * d_pack**2 / 4                                      # -> mm^2
+    V_frame = pi * (d_pack**2 - d_face**2) * t_frame / 4             # -> mm^3
+    m_housings = 2 * V_half * rho_ti                                 # -> g
+    m_frames = 2 * V_frame * rho_ss                                  # -> g
+    m_coarse = 2 * A_pack * w_coarse                                 # -> g
+    m_fine = A_pack * w_fine                                         # -> g
+    m_dry = m_housings + m_frames + m_coarse + m_fine                # -> lb
+    m_reserve = growth * m_dry                                       # -> lb
+    MS_mass = m_limit / m_reserve - 1
+
+
 def profile(c):
     d = {key: c.value(key, mm) for key in (
         "body_d", "pocket_d", "active_d", "outer_shoulder_z", "inner_shoulder_z",
@@ -172,14 +277,6 @@ def plain(headers, rows):
     return Table([Column(str(i), title, align="left") for i,title in enumerate(headers)], rows, zebra=False)
 
 
-def inputs_table(c):
-    pairs = [("Inlet / outlet OD", "stub_od"), ("Wall", "stub_wall"), ("Filtration rating", "rating"),
-             ("MEOP", "p_meop"), ("Proof", "p_proof"), ("Burst", "p_burst"),
-             ("Nominal flow", "mdot_n"), ("Surge flow", "mdot_s"),
-             ("Density", "rho"), ("Dynamic viscosity", "mu"), ("Temperature", "temperature_F")]
-    return plain(["Input", "Value", "Workbook key"], [(label, c[key], key) for label,key in pairs])
-
-
 def fluid_note(c):
     data = tomllib.loads((ROOT / "fluid.toml").read_text(encoding="utf-8"))
     return (f"Selected fluid: {data['name']} ({data['phase']}). {data['property_basis']} "
@@ -198,38 +295,10 @@ def requirements_table(reqs, c):
     return plain(["ID", "Requirement", "Target"], [(r.id, r.text, targets[r.id]) for r in reqs.all_requirements().values()])
 
 
-def inlet_table(c):
-    d = bore(c.stub_od, c.stub_wall)
-    return plain(["Flow", "Bore velocity", "Dynamic pressure"], [
-        (name, velocity(q,c.rho,area(d)).to(m/s), dynamic_pressure(q,c)) for name,q in (("Nominal",c.mdot_n),("Surge",c.mdot_s))])
-
-
-def flow_table(c):
-    result = flow(c)
-    return plain(["Quantity", "Value"], [("Derived bore",result.d_i.to("inch")),
-        ("Exposed face area",result.A_face.to(mm**2)),("Nominal approach velocity",result.U_n.to(m/s)),
-        ("Surge approach velocity",result.U_s.to(m/s))])
-
-
 def inlet_loss_table(c):
     return plain(["Assumed K", "Nominal loss", "Surge loss"],
         [(K,positive(K,"","Inlet K",zero=True)*dynamic_pressure(c.mdot_n,c),K*dynamic_pressure(c.mdot_s,c))
          for K in sweep("inlet_K")])
-
-
-def pressure_table(c):
-    rows = []
-    for name,od,id in (("Stub",c.stub_od,bore(c.stub_od,c.stub_wall)),("Weld rim",c.body_d,c.pocket_d)):
-        for case,p,strength in (("Proof",c.p_proof,c.Sy),("Burst",c.p_burst,c.Su)):
-            stress = cylinder_vm(p,od,id)
-            rows.append((name+" / "+case,stress,(strength/stress).to("").magnitude))
-    return plain(["Location / case", "VM stress", "Strength / stress"], rows)
-
-
-def mass_table(c):
-    estimate = mass(c)
-    return plain(["Quantity", "Value"], [("Estimated dry mass",estimate),("With growth allowance",estimate*c.growth_factor),
-        ("Mass limit",c.mass_limit)])
 
 
 def bom(c):
@@ -243,6 +312,18 @@ def bom(c):
 def reference_table(c):
     return plain(["Cloth", "Da (µm)", "L (mm)", "A1", "A2"],
         [(r["screen"],r["da_um"],f"{r['l_mm']:.5f}",r["a1"],r["a2"]) for r in sheet("ReferenceScreens")])
+
+
+def screen_cases(c):
+    """Nominal and surge loss of each published cloth on the exposed face."""
+    face = area(c.active_d)
+    rows = []
+    for r in sheet("ReferenceScreens"):
+        Cv, Ci = reference_coefficients(r)
+        rows.append((r["screen"],
+                     clean_drop(c.mdot_n, c.rho, c.mu, face, Cv, Ci),
+                     clean_drop(c.mdot_s, c.rho, c.mu, face, Cv, Ci)))
+    return plain(["Cloth", "Nominal loss", "Surge loss"], rows)
 
 
 def rating_table(c):
@@ -266,7 +347,7 @@ def selected_table(c):
 
 
 def figure(xlabel, ylabel):
-    return Figure(xlabel=xlabel, ylabel=ylabel, width=80, height=64)
+    return Figure(xlabel=xlabel, ylabel=ylabel, width=160, height=78)
 
 
 def flow_plot(c):
@@ -312,10 +393,6 @@ def loading_plot(c, driver):
               else cake_drop(q,c,Cv,Ci,v) for v in xs]
         fig.line(xs,ys,label=name,yunit="psi",mark="o")
     return fig
-
-
-def test_table():
-    return sheet("Tests").table("id","requirement","procedure","criterion", zebra=False)
 
 
 def export_sweeps(c):

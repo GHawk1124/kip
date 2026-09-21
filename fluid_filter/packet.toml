@@ -1,26 +1,46 @@
-# Order, section names and column choices are entirely editable.
-order = ["overview", "requirements", "inputs", "preliminary", "sizing", "design",
-         "analysis", "manufacturing", "test", "compliance"]
+# Section order follows the calculation report. Omitted settings keep Kip's defaults.
+order = ["overview", "requirements", "inputs", "design", "preliminary", "analysis",
+         "sizing", "manufacturing", "test", "compliance"]
 
 [sections.overview]
+title = "Design intent"
 generate = false
 columns = 1
 [sections.requirements]
+title = "Requirements and interpretation"
 generate = false
 columns = 1
 [sections.inputs]
+title = "Calculation constants"
 generate = false
 columns = 1
 [sections.design]
+title = "Architecture"
+generate = false
+columns = 1
+[sections.preliminary]
+title = "Flow basis"
+generate = false
 columns = 1
 [sections.analysis]
+title = "Pressure drop"
 generate = false
+columns = 1
+[sections.sizing]
+title = "Housing and mass"
+generate = false
+columns = 1
 [sections.manufacturing]
+title = "Manufacturing"
+generate = false
 columns = 1
 [sections.test]
+title = "Planned verification"
 generate = false
 columns = 1
 [sections.compliance]
+title = "Compliance"
+generate = true
 columns = 1
 
 [sheets.constants]
@@ -37,3 +57,4 @@ sheet = "Process"
 [sheets.tests]
 path = "input/design.xlsx"
 sheet = "Tests"
+optional = true

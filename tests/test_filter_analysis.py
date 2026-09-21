@@ -5,7 +5,7 @@ import sys
 
 import numpy as np
 import pytest
-from kip import Constants, kg, m, mm, s, Pa, psi, inch, lb
+from kip import Constants, kg, m, mm, s, Pa, psi, inch, lb, MPa
 from kip.packet import UnavailableInput
 
 _spec = importlib.util.spec_from_file_location("filter_analysis", Path(__file__).parents[1]/"fluid_filter/analysis.py")
@@ -105,6 +105,42 @@ def test_sweeps_contain_requested_baselines(c):
     assert any(np.isclose(x.to(inch).magnitude,.025) for x in a.sweep("stub_wall"))
     assert {q.to(lb/s).magnitude for q in (c.mdot_n,c.mdot_s)} <= {q.to(lb/s).magnitude for q in a.sweep("mass_flow")}
     assert any(x.magnitude == 1 for x in a.sweep("pressure_factor"))
+
+
+def test_worked_calculations_match_the_screen_and_cylinder_models(c):
+    water = a.flow(c)
+    screen = a.reference_screen(c, water)
+    Cv, Ci = a.reference_coefficients(next(r for r in a.sheet("ReferenceScreens") if r["screen"] == "200 x 1400"))
+    face = a.area(c.active_d)
+    assert screen.Cv.to(1/m).magnitude == pytest.approx(Cv.to(1/m).magnitude)
+    assert screen.Ci.magnitude == pytest.approx(Ci.magnitude)
+    assert screen.dp_n.magnitude == pytest.approx(
+        a.clean_drop(c.mdot_n, c.rho, c.mu, face, Cv, Ci).magnitude)
+
+    bore = a.bore_flow(c, water)
+    assert bore.q_n.magnitude == pytest.approx(a.dynamic_pressure(c.mdot_n, c).magnitude)
+    assert bore.q_s.magnitude == pytest.approx(a.dynamic_pressure(c.mdot_s, c).magnitude)
+
+    housing = a.housing_loss(c, bore)
+    assert housing.dp_housing_n.magnitude == pytest.approx(bore.q_n.magnitude)
+    blocked = a.blocked_drop(c, water, screen)
+    assert blocked.dp_blocked.magnitude == pytest.approx(
+        a.clean_drop(c.mdot_n, c.rho, c.mu, face, Cv, Ci, 0.5).magnitude)
+    loaded = a.loaded_drop(c, water, screen)
+    assert loaded.dp_loaded.magnitude == pytest.approx(
+        a.cake_drop(c.mdot_n, c, Cv, Ci, 1e9*m/kg).magnitude)
+
+    wall = a.boundary(c, water)
+    stub = a.cylinder_vm(c.p_proof, c.stub_od, water.d_i)
+    rim = a.cylinder_vm(c.p_burst, c.body_d, c.pocket_d)
+    assert wall.sigma_stub_proof.to(MPa).magnitude == pytest.approx(stub.to(MPa).magnitude)
+    assert wall.sigma_rim_burst.to(MPa).magnitude == pytest.approx(rim.to(MPa).magnitude)
+    assert wall.MS_stub_proof.magnitude == pytest.approx((c.Sy/stub).to("").magnitude - 1)
+    assert wall.MS_rim_burst.magnitude == pytest.approx((c.Su/rim).to("").magnitude - 1)
+
+    weighed = a.assembly_mass(c)
+    assert weighed.m_dry.magnitude == pytest.approx(a.mass(c).magnitude)
+    assert weighed.MS_mass.magnitude == pytest.approx((c.mass_limit/(weighed.m_dry*c.growth_factor)).magnitude - 1)
 
 
 def test_missing_calibration_sheet_preserves_reference_sweeps_and_csv(c, monkeypatch, tmp_path):

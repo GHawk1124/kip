@@ -23,11 +23,11 @@ viscosity and temperature together in the workbook. The constant-property,
 single-phase Newtonian model requires review for gas compressibility, phase
 changes and material compatibility.
 
-`doc.py` contains the report cells; `analysis.py` contains the equations and
-tables; `cad.py` contains the seven-solid assembly. `packet.toml` controls all
-section ordering, names and generated content. `layout.toml` defaults to two
-columns; section overrides and individual `columns=1`, `columns=2` or
-`columns=default` markers can change part or all of the layout.
+`doc.py` is the report: section prose, the drawings, and one cell per
+calculation. `analysis.py` holds the equations. Kip typesets the arithmetic
+after each `# equations` line, so the PDF shows the substitution rather than a
+summary table of the same result. `cad.py` builds the seven-solid assembly.
+`packet.toml` sets the section order and titles. The page is one column.
 
 Clean loss uses Cv μ U + Ci ρ U² with U = mass flow / (density × exposed area).
 Calibrate the finished pack, including supports, with `fit_coefficients` or
