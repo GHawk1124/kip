@@ -3,33 +3,27 @@ from kip import *
 
 report = run_document(__file__)
 
-reqs = Requirements.load("requirements.toml")
+reqs = Requirements.load()
 
-# %% text scope "Scope"
+# %% text "Scope"
 """Check the object's tensile capacity against @req:REQ-001."""
 
-# %% table symbols "Nomenclature"
-symbols = nomenclature({
-    "P": ("Required load", "kN"),
-    "A": ("Net area", "mm²"),
-    "sigma": ("Tensile stress", "MPa"),
-    "sigma_allow": ("Allowable stress", "MPa"),
-    "MS": "Margin of safety",
-})
+# %% table "Nomenclature"
+nomenclature()
 
-# %% controlled loads "Design requirements"
+# %% controlled "Design requirements"
 P = reqs.P_design
 sigma_allow = reqs.sigma_allow
 
-# %% inputs geometry "Geometry"
-A = 200 * mm**2
+# %% inputs "Geometry"
+A = 200 * mm**2  # Net area
 
-# %% calc stress "Tensile stress" unit=MPa
-sigma = P / A
+# %% calc "Tensile stress"
+sigma = P / A      # -> MPa
 
 # %% calc margin "Margin of safety"
 MS = sigma_allow / sigma - 1
 
-# %% table compliance "Verification matrix"
+# %% table "Verification matrix"
 reqs.verify("REQ-001", MS, ">= 0", evidence="margin")
-compliance = compliance_matrix(reqs, xlsx="verification.xlsx")
+compliance_matrix(reqs, xlsx="verification.xlsx")

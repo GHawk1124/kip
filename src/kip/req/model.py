@@ -56,7 +56,7 @@ def document_dir(path: "Path | str | None"):
     """Resolve relative requirement paths against ``path`` for the duration."""
     global _DOC_DIR
     previous = _DOC_DIR
-    _DOC_DIR = Path(path) if path is not None else None
+    _DOC_DIR = Path(path).resolve() if path is not None else None
     try:
         yield
     finally:
@@ -236,7 +236,7 @@ class Requirements:
 
     # -- loading ---------------------------------------------------------
     @classmethod
-    def load(cls, path: str | Path, _seen: set[Path] | None = None
+    def load(cls, path: str | Path = "requirements.toml", _seen: set[Path] | None = None
              ) -> "Requirements":
         p = _resolve(path)
         _seen = _seen or set()
@@ -343,10 +343,13 @@ class Requirements:
     def __getattr__(self, name: str):
         if name.startswith("_"):
             raise AttributeError(name)
-        return self.var(name).quantity
+        return self[name]
 
     def __getitem__(self, name: str):
-        return self.var(name).quantity
+        from ..quantities import controlled_entry, record_read
+        variable = self.var(name)
+        record_read(self, controlled_entry(variable))
+        return variable.quantity
 
     def __contains__(self, name: str) -> bool:
         return self.var(name, strict=False) is not None

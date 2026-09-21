@@ -3,25 +3,21 @@ from kip import *
 
 report = run_document(__file__)
 
-# %% text scope "Scope"
+# %% text "Scope"
 """
 Describe the purpose and assumptions of this analysis.
 The computed moment is @val:M, derived in @blk:moment.
 """
 
-# %% table symbols "Nomenclature"
-symbols = nomenclature({
-    "P": ("Applied load", "kN"),
-    "L": ("Lever arm", "mm"),
-    "M": ("Bending moment", "kN m"),
-})
+# %% table "Nomenclature"
+nomenclature()
 
-# %% inputs inputs "Inputs"
-P = 1 * kN
-L = 100 * mm
+# %% inputs "Inputs"
+P = 1 * kN  # Applied load
+L = 100 * mm  # Lever arm
 
-# %% calc moment "Bending moment" unit=kN*m
-M = P * L
+# %% calc moment "Bending moment"
+M = P * L      # -> kN*m
 
-# %% text conclusion "Conclusion"
+# %% text "Conclusion"
 """The applied load produces a bending moment of @val:M."""

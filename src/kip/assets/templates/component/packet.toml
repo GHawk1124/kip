@@ -1,0 +1,8 @@
+# Reorder, remove, or add section ids. Omitted settings inherit Kip's defaults.
+order = ["overview", "requirements", "inputs", "preliminary", "sizing", "design",
+         "analysis", "manufacturing", "test", "compliance"]
+
+# Optional per-section overrides:
+# [sections.preliminary]
+# title = "Preliminary Analysis"
+# columns = 2

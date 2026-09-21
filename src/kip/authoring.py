@@ -68,12 +68,23 @@ class Calculation:
     values: dict
     units: dict
     precision: int = 3
+    input_entries: list = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def symbols(self):
+        visible = {n.id for n in ast.walk(ast.parse(self.source)) if isinstance(n, ast.Name)}
+        return {name: item for name, item in self.metadata.items() if name in visible}
 
     def __getattr__(self, key):
         try:
-            return self.values[key]
+            value = self.values[key]
         except KeyError as exc:
             raise AttributeError(key) from exc
+        from .quantities import entry, record_read, scalar
+        if scalar(value):
+            record_read(self, self.metadata.get(key) or entry(key, value, basis="Calculated"))
+        return value
 
 
 def _equation_source(fn):
@@ -125,6 +136,8 @@ def calculation(fn=None, *, units=None, precision=3):
     def decorate(fn):
         from .math.handcalc_bridge import display_units
         tree, function, raw, returns = _equation_source(fn)
+        full_source = textwrap.dedent(inspect.getsource(fn))
+        signature = inspect.signature(fn)
         equations, annotated = display_units(raw)
         conversions = annotated + list((units or {}).items())
 
@@ -152,7 +165,12 @@ def calculation(fn=None, *, units=None, precision=3):
 
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            values = inner(*args, **kwargs)
+            from .quantities import collect_reads, entry, scalar, symbol_entries
+            bound = signature.bind(*args, **kwargs)
+            bound.apply_defaults()
+            inputs = [entry(name, value) for name, value in bound.arguments.items() if scalar(value)]
+            with collect_reads() as reads:
+                values = inner(*args, **kwargs)
             for name, unit in conversions:
                 if name not in values:
                     raise ValueError(
@@ -164,7 +182,9 @@ def calculation(fn=None, *, units=None, precision=3):
                     raise ValueError(
                         f"{fn.__name__}: {name!r} is a plain number, so it "
                         f"cannot be displayed in {unit}") from exc
-            return Calculation(equations, values, dict(conversions), precision)
+            inputs.extend(item for _, item in reads)
+            metadata = symbol_entries(full_source, values, reads)
+            return Calculation(equations, values, dict(conversions), precision, inputs, metadata)
         return wrapped
 
     return decorate(fn) if fn is not None else decorate

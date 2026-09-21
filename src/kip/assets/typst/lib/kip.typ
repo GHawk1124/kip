@@ -75,8 +75,13 @@
   layout(size => {
     let inset-x = if framed { 2.5mm } else { 0pt }
     let content = [#kip-snapping.update(snap)#body#kip-snapping.update(true)]
-    let m = measure(block(width: size.width - 2 * inset-x, spacing: 0pt, content))
-    block(width: 100%, height: calc.ceil(m.height / g) * g + if framed { g } else { 0pt },
+    // A multi-page table repeats its header. Its total height cannot be
+    // measured in one region without shortening the final rows on later pages.
+    let height = if breakable { auto } else {
+      let m = measure(block(width: size.width - 2 * inset-x, spacing: 0pt, content))
+      calc.ceil(m.height / g) * g + if framed { g } else { 0pt }
+    }
+    block(width: 100%, height: height,
       spacing: g, breakable: breakable,
       stroke: if framed { 0.4pt + black } else { none }, radius: 3pt,
       inset: (x: inset-x), content)
@@ -117,25 +122,30 @@
   let m = measure(block(width: size.width, spacing: 0pt, content))
   if kip-snapping.get() {
     let pad = pitch - 0.75 * base
-    let lines = calc.max(1, calc.round((m.height - base) / pitch) + 1)
-    let cells = lines * pitch / g
-    block(width: 100%, height: cells * g, spacing: 0pt,
-      inset: (top: pad), content)
+    let height = calc.ceil((pad + m.height - 0.25 * base) / g) * g
+    // Quantise using the final inset, rather than a fixed block height.
+    // Fixed-height paragraphs can compress their last fragment after a page
+    // or column break, especially when inline fractions increase line height.
+    block(width: 100%, spacing: 0pt,
+      inset: (top: pad, bottom: height - pad - m.height), content)
   } else { block(spacing: 0pt, content) }
 }))
 
 // Center the actual text bounds within a whole number of paper cells.
 #let grid-cell(body, chip: false, fill: none, stroke: none) = block(spacing: 0pt, context layout(size => {
-  show par: it => it
-  set text(top-edge: "bounds", bottom-edge: "bounds")
-  set par(justify: false)
+  // Measure the same styled content we render. Surrounding set/show rules
+  // otherwise affect the rendered paragraph differently from measure().
+  let content = [#show par: it => it
+#set text(top-edge: "cap-height", bottom-edge: "descender")
+#set par(justify: false)
+#body]
   let g = kip-grid.get()
   let pad = 2pt
-  let m = measure(block(width: if chip { auto } else { size.width }, spacing: 0pt, body))
+  let m = measure(block(width: if chip { auto } else { size.width }, spacing: 0pt, content))
   let ht = calc.ceil((m.height + 2 * pad) / g) * g
   block(width: if chip { m.width + 10pt } else { 100% }, height: ht,
     spacing: 0pt, inset: (x: if chip { 5pt } else { 0pt }, y: pad),
-    fill: fill, stroke: stroke, outset: if chip { -1pt } else { 0pt }, radius: 2pt, align(horizon, body))
+    fill: fill, stroke: stroke, outset: if chip { -1pt } else { 0pt }, radius: 2pt, align(horizon, content))
 }))
 
 #let equation-number = counter("kip-equation")
@@ -254,28 +264,6 @@
   ]
 }
 
-// Verification keeps its teal output panel, with rows on the same rules.
-#let kip-verify(id: "", label: none, rows: (), snap: true, frame: auto) = {
-  kip-anchor(id, "verify")
-  grid-snap(frame: frame, snap: snap, block(
-    width: 100%, spacing: 0pt, breakable: false,
-    fill: kip-colors.output-bg, stroke: (left: 1.6pt + kip-colors.output),
-    inset: (x: 5pt),
-  )[
-    #block-title(if label == none { "Verification" } else { label }, color: kip-colors.output)
-    #table(columns: (18%, 18%, 50%, 14%), stroke: none,
-      inset: (x: 4pt, y: 0pt), align: (left, left, left, right),
-      ..rows.map(r => (
-        grid-text(text(size: 8pt, fill: kip-colors.output-ink, weight: "medium", r.id)),
-        grid-text(text(size: 7.6pt, fill: kip-colors.faint, r.method)),
-        grid-text(text(size: 8pt, fill: kip-colors.output-ink, r.result)),
-        grid-text(text(size: 8pt, weight: "bold",
-          fill: if r.passed { kip-colors.ok } else { kip-colors.fail }, r.status)),
-      )).flatten(),
-    )
-  ])
-}
-
 // Product-breakdown lineage for the item this document covers.
 #let kip-item(id: "", label: none, lineage: (), summary: none,
               snap: true, frame: auto) = {
@@ -321,9 +309,10 @@
     #block-title(label)
     #grid-graphic(context layout(size => {
       let g = kip-grid.get()
-      let m = measure(body)
+      let fitted = fit-width(body)
+      let m = measure(fitted)
       let dx = calc.max(0pt, calc.floor((size.width - m.width) / (2 * g)) * g)
-      block(spacing: 0pt, inset: (left: dx), body)
+      block(spacing: 0pt, inset: (left: dx), fitted)
     }))
     #if caption != none {
       grid-text(align(center, text(size: 8pt, fill: kip-colors.faint, style: "italic", caption)))
@@ -617,8 +606,34 @@
   set text(font: font, size: size, fill: kip-colors.ink,
            top-edge: 0.75 * size, bottom-edge: -0.25 * size)
   set par(justify: true, leading: calc.ceil(size / grid-step) * grid-step - size, spacing: grid-step)
-  show par: it => grid-text(it)
+  show par: it => context {
+    let pitch = calc.ceil(size / grid-step) * grid-step
+    // List line boxes already occupy a whole pitch. An identity show rule
+    // inside a list does not cancel this outer paragraph transformation.
+    if text.top-edge == pitch and text.bottom-edge == 0pt { it }
+    else { grid-text(it) }
+  }
   show math.equation.where(block: true): set block(spacing: grid-step)
+
+  // Tight lists do not use the paragraph show rule. Give their text and
+  // markers the same baseline pitch directly, including nested lists.
+  let grid-list(body) = context {
+    let base = size
+    let pitch = calc.ceil(base / grid-step) * grid-step
+    set text(top-edge: pitch, bottom-edge: 0pt)
+    set par(leading: 0pt)
+    body
+  }
+  set list(spacing: 0pt)
+  set enum(spacing: 0pt)
+  show list.where(tight: false): set list(spacing: grid-step)
+  show enum.where(tight: false): set enum(spacing: grid-step)
+  show list: set block(above: 0pt, below: 0pt)
+  show enum: set block(above: 0pt, below: 0pt)
+  show list: grid-list
+  show enum: grid-list
+  show raw.where(block: true): set block(above: 0pt, below: 0pt)
+  show raw.where(block: true): it => grid-text(it)
 
   // Headings retain the common line metrics.
   // One rule branching on level, rather than one rule per level: a document

@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 from .blocks import Block
+from ..prose import CITE_RE, citations, text_template
 
 __all__ = [
     "analyze",
@@ -29,7 +30,6 @@ __all__ = [
 _BUILTINS = frozenset(dir(builtins))
 
 #: ``@val:name`` inlines a computed value; ``@blk:id``/``@req:ID`` cross-reference.
-CITE_RE = re.compile(r"@(?P<kind>val|blk|req):(?P<target>[A-Za-z_][A-Za-z0-9_\-]*)")
 
 
 class CycleError(Exception):
@@ -202,10 +202,14 @@ def analyze_code(source: str) -> tuple[frozenset[str], frozenset[str]]:
 
 def analyze_text(source: str) -> tuple[frozenset[str], tuple[tuple[str, str], ...]]:
     """Return ``(refs, cites)`` for a prose block's ``@val:``/``@blk:``/``@req:``."""
-    cites = tuple(
-        (m.group("kind"), m.group("target")) for m in CITE_RE.finditer(source)
-    )
+    try:
+        text, tree = text_template(source)
+    except (SyntaxError, ValueError):
+        return frozenset(), ()  # Execution reports the error against this cell.
+    cites = citations(text)
     refs = frozenset(t for k, t in cites if k == "val")
+    if tree is not None and isinstance(tree.body, ast.JoinedStr):
+        refs |= analyze_code(source)[1]
     return refs, cites
 
 
@@ -249,7 +253,7 @@ def default_provided() -> frozenset[str]:
     """
     from kip import __all__
 
-    return frozenset(__all__)
+    return frozenset(__all__) | {"__file__", "__name__"}
 
 
 def analyze(

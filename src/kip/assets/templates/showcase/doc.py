@@ -7,7 +7,7 @@ from kip import *
 
 report = run_document(__file__)
 import sympy as sp
-reqs = Requirements.load("requirements.toml")
+reqs = Requirements.load()
 
 # %% text scope "Scope"
 """
@@ -26,7 +26,7 @@ and material allowables are defined in its local requirements file.
 """
 
 # %% table nomenclature "Nomenclature"
-symbols = nomenclature({
+nomenclature({
     "P_lift": ("Unfactored lift load", "kN"),
     "DF": "Design load factor",
     "P_d": ("Factored design load", "kN"),
@@ -40,7 +40,7 @@ symbols = nomenclature({
 })
 
 # %% draw sketch "Lug geometry"  caption="Plate lug, dimensions in mm."
-sketch = Drawing(width=88, length="0.62cm", body="""
+Drawing(width=88, length="0.62cm", body="""
   let ink = rgb("#17140f")
   let dim = rgb("#123a6b")
   set-style(stroke: (paint: ink, thickness: 0.9pt))
@@ -82,8 +82,6 @@ sketch = Drawing(width=88, length="0.62cm", body="""
 
 # %% text method "Method" section=1
 """
-## Governing relations
-
 Bearing stress at the pin hole and net-section tension across the reduced
 area are the two candidate failure modes:
 """
@@ -158,7 +156,7 @@ _case_rows = [
     ("LC-11", "Fatigue mean", 12.0, 2.0, 46.9, 1.192),
     ("LC-12", "Ultimate check", 18.0, 3.3, 116.0, 0.291),
 ]
-cases = Table(
+Table(
     columns=[
         Column("case", "Case", align="left"),
         Column("desc", "Description", align="left"),
@@ -177,18 +175,16 @@ cases = Table(
 )
 
 # %% table controlled "Controlled variables"
-controlled = variables_table(reqs)
+variables_table(reqs)
 
 # %% table compliance "Verification cross-reference matrix (VCRM)"
 reqs.verify("REQ-014", MS, ">= 0", evidence="margin")
 reqs.verify("REQ-015", sigma_nt / sigma_br, "< 1", evidence="netsection")
 reqs.verify("REQ-016", sigma_coupon_min, ">= sigma_y_min", evidence="coupon")
-compliance = compliance_matrix(reqs)
+compliance_matrix(reqs)
 
 # %% text conclusion "Conclusion" section=1
 """
-## Result
-
 Bearing at the pin governs, with @val:sigma_br against an allowable of
 @val:sigma_allow. Net-section tension reaches only @val:sigma_nt and does not
 govern. The controlling margin of safety is @val:MS, so the lug is adequate
@@ -196,12 +192,10 @@ as drawn in @blk:sketch. Design factors follow @src:asme.
 """
 
 # %% sources refs "References" columns=1
-refs = Sources.load()
+Sources.load()
 
 # %% text cad_intro "CAD definition" section=1 columns=1 pagebreak=true
 """
-## Model and drawing exports
-
 The following two-column drawing section uses one build123d solid model of
 LUG-001. The plate is 90 mm wide and 16 mm thick with a 32 mm pin hole.
 The hole center is 80 mm above the base; the rounded head has a 45 mm radius.
@@ -225,22 +219,22 @@ profile = bd.Plane.XZ * (
 lug_solid = bd.extrude(profile, amount=float(t_plate.magnitude) / 2, both=True)
 base_solid = bd.Pos(0, 0, -5) * bd.Box(150, 70, 10)
 cad_model = lug_solid + base_solid
-iso_drawing = cad_view(cad_model, "iso", caption="Isometric; visible and hidden edges.")
+cad_view(cad_model, "iso", caption="Isometric; visible and hidden edges.")
 
 # %% draw cad_top "Top view (+Z)"
-top_drawing = cad_view(cad_model, "top", caption="Looking down; pin-hole edges are hidden.")
+cad_view(cad_model, "top", caption="Looking down; pin-hole edges are hidden.")
 
 # %% draw cad_side "Side view (+X)"
-side_drawing = cad_view(cad_model, "side", caption="Plate thickness and mounting-base profile.")
+cad_view(cad_model, "side", caption="Plate thickness and mounting-base profile.")
 
 # %% draw cad_bottom "Bottom view (-Z)"
-bottom_drawing = cad_view(cad_model, "bottom", caption="Underside of base; plate edges hidden.")
+cad_view(cad_model, "bottom", caption="Underside of base; plate edges hidden.")
 
 # %% draw cad_section "Section A-A / XZ at Y = 0"
-section_drawing = cad_section(cad_model, bd.Plane.XZ, dxf="lug_section_AA.dxf",
+cad_section(cad_model, bd.Plane.XZ, dxf="lug_section_AA.dxf",
     caption="True center-plane section through the pin hole.")
 
 # %% draw cad_face "Single plate face / local XY"
 plate_face = lug_solid.faces().filter_by(bd.Axis.Y).sort_by(bd.Axis.Y)[0]
-face_drawing = cad_face(plate_face, dxf="lug_side_face.dxf",
+cad_face(plate_face, dxf="lug_side_face.dxf",
     caption="One planar face; outer profile and pin-hole wire.")

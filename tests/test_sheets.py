@@ -206,6 +206,34 @@ def test_an_empty_cell_naming_nothing_is_a_clear_error():
         build(source='from kip import *\n# %% table missing "Missing"\n')
 
 
+@pytest.mark.parametrize("body", ["", "data", 'Sheet.load("values.xlsx")'])
+def test_table_cells_place_sheets_without_a_table_call(tmp_path, body):
+    workbook(tmp_path, "values.xlsx", ["key", "value", "unit"], [("P", 12, "kN")])
+    document = build(source='from kip import *\ndata = Sheet.load("values.xlsx")\n'
+                     '# %% table data "Inputs"\n' + body, path=tmp_path / "doc.py")
+    assert document.results["data"].content.rows == [["P", 12, "kN"]]
+
+
+def test_table_cells_place_constants_without_a_table_call(tmp_path):
+    (tmp_path / "input").mkdir()
+    workbook(tmp_path / "input", "constants.xlsx", ["key", "value", "unit"], [("P", 12, "kN")])
+    document = build(source='from kip import *\nC = Constants.load()\n'
+                     '# %% table "Inputs"\nC\n', path=tmp_path / "doc.py")
+    assert document.results["inputs"].content.rows == document.value("C").table().rows
+
+
+def test_relative_document_folder_is_resolved_once(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    inputs = tmp_path / "project" / "input"
+    inputs.mkdir(parents=True)
+    workbook(inputs, "constants.xlsx", ["key", "value", "unit"], [("P", 12, "kN")])
+    monkeypatch.chdir(tmp_path)
+    document = build(source='from kip import *\n# %% table "Inputs"\nConstants.load()\n',
+                     path=Path("project/doc.py"))
+    assert document.results["inputs"].content.rows
+
+
 def test_fmt_quantity_does_not_pad_or_lose_digits():
     assert fmt_quantity(650.0 * ureg.psi) == "650 psi"
     assert fmt_quantity(0.000979 * ureg.Pa) == "0.000979 Pa"

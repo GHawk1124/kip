@@ -77,7 +77,12 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                         meta[key] = value
                     else:
                         positional.append(token)
-                if positional:
+                if len(positional) == 1 and (
+                    m.group("meta").lstrip().startswith(('"', "'"))
+                    or "id" in meta
+                ):
+                    meta.setdefault("label", positional[0])
+                elif positional:
                     meta.setdefault("id", positional[0])
                 if len(positional) > 1:
                     meta.setdefault("label", positional[1])
@@ -87,6 +92,9 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                 raise KipSyntaxError(str(e), path, i + 1) from e
         kind = {"inputs": "given", "equations": "symbolic",
                 "drawing": "draw", "references": "sources"}.get(kind, kind)
+        if kind in ("preliminary", "sizing", "analysis"):
+            meta.setdefault("stage", kind)
+            kind = "calc"
         if "unit" in meta:
             if "result_unit" in meta:
                 raise KipSyntaxError("use unit= or result_unit=, not both", path, i + 1)
@@ -97,6 +105,9 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                 + ", ".join(f"kip.{k}" for k in KINDS if k != "prelude"),
                 path, i + 1,
             )
+        if "id" not in meta and meta.get("label"):
+            slug = re.sub(r"[^a-z0-9_]+", "_", meta["label"].lower()).strip("_")
+            meta["id"] = slug if slug and not slug[0].isdigit() else kind + "_" + slug
         if "id" not in meta:
             raise KipSyntaxError(f"kip.{kind} block is missing 'id='", path, i + 1)
         if not _SLUG_RE.match(meta["id"]):

@@ -123,6 +123,7 @@ class Constant:
     basis: str = ""
     source: str = ""
     symbol: str = ""
+    description_inferred: bool = False
 
     def __str__(self) -> str:
         return fmt_quantity(self.quantity)
@@ -150,7 +151,7 @@ class Constants(Mapping):
 
     # -- loading ---------------------------------------------------------
     @classmethod
-    def load(cls, path: "str | Path", sheet: str = "Inputs") -> "Constants":
+    def load(cls, path: "str | Path" = "input/constants.xlsx", sheet: str = "Inputs") -> "Constants":
         raw = Sheet.load(path, sheet, unique="key")
         missing = {"key", "value"} - set(raw.keys)
         if missing:
@@ -186,11 +187,14 @@ class Constants(Mapping):
     # -- mapping ---------------------------------------------------------
     def __getitem__(self, key: str):
         try:
-            return self._entries[key].quantity
+            item = self._entries[key]
         except KeyError:
             raise KeyError(
                 f"no constant {key!r}; defined: {', '.join(sorted(self._entries))}"
             ) from None
+        from .quantities import record_read
+        record_read(self, item)
+        return item.quantity
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._entries)

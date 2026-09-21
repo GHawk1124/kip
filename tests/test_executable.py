@@ -33,6 +33,19 @@ answer = analysis.stress_model(100 * N, 10 * mm)
     assert "area" in document.results["strength"].latex
 
 
+def test_bare_calculation_call_has_the_same_equations_and_result_chip(tmp_path):
+    source = '''import test_executable as analysis
+from kip import *
+# %% calculation "Strength"
+analysis.stress_model(100 * N, 10 * mm)
+'''
+    bare = build(source=source, path=tmp_path / "doc.py")
+    assigned = build(source=source.replace("\nanalysis.stress_model", "\nanswer = analysis.stress_model"),
+                     path=tmp_path / "doc.py")
+    assert emit(bare)["main.typ"] == emit(assigned)["main.typ"]
+    assert bare.results["strength"].values == {}
+
+
 def test_direct_script_cli_and_relative_sources(tmp_path):
     (tmp_path / "sources.toml").write_text('[sources.test]\ntitle="Reference example"\n')
     path = tmp_path / "doc.py"

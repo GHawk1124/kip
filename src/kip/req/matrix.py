@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import re
-
 from ..content import Column, Table, Math
 from ..math.printer import render_name
 from ..units import fmt_quantity
@@ -60,50 +57,33 @@ def variables_table(reqs: Requirements, *, xlsx: str | None = None) -> Table:
 
 def compliance_matrix(reqs: Requirements, *, inherited: bool = False,
                       xlsx: str | None = None) -> Table:
-    """The verification matrix: every requirement, its evidence and status.
-
-    A requirement with no recorded check shows OPEN and is highlighted as a
-    failure -- an unverified requirement is not a passing one.
-    """
+    """One plain row per requirement; missing evidence remains OPEN."""
     source = reqs.all_requirements() if inherited else reqs.requirements
     by_req: dict[str, list] = {}
     for c in reqs.checks:
         by_req.setdefault(c.req_id, []).append(c)
 
-    rows, highlight = [], {}
+    rows = []
     for rid in sorted(source):
         req = source[rid]
         checks = by_req.get(rid, [])
         if not checks:
-            rows.append((rid, req.text, req.verification.title(), "-", "-", "OPEN"))
-            highlight[len(rows) - 1] = "fail"
+            rows.append((rid, req.text, req.note or f"Awaiting {req.verification} evidence.", "OPEN"))
             continue
-        for c in checks:
-            match = re.fullmatch(r"(>=|<=|==|!=|>|<)\s*(.+)", c.criterion.strip())
-            result = f"{fmt_quantity(c.value)} {c.criterion}"
-            if match:
-                op, bound = match.groups()
-                right = render_name(bound) if bound in reqs.all_variables() else json.dumps(bound)
-                op = {"==": "=", "!=": "!="}.get(op, op)
-                result = Math(f"{json.dumps(fmt_quantity(c.value), ensure_ascii=False)} {op} {right}")
-            rows.append((
-                rid, req.text, c.method.title(),
-                c.evidence or "-",
-                result,
-                c.status,
-            ))
-            highlight[len(rows) - 1] = "ok" if c.passed else "fail"
+        evidence = []
+        for check in checks:
+            result = f"{fmt_quantity(check.value)} {check.criterion}"
+            evidence.append(result + (f"; {check.evidence}" if check.evidence else ""))
+        rows.append((rid, req.text, "\n".join(evidence), "PASS" if all(c.passed for c in checks) else "FAIL"))
 
     return Table(
         columns=[
             Column("id", "ID", align="left"),
             Column("text", "Requirement", align="left"),
-            Column("method", "Method", align="left"),
-            Column("evidence", "Evidence", align="left"),
-            Column("result", "Result", align="left"),
-            Column("status", "Status", align="center"),
+            Column("evidence", "Assessment", align="left"),
+            Column("status", "Status", align="left"),
         ],
-        rows=rows, highlight=highlight, xlsx=xlsx, zebra=False,
+        rows=rows, xlsx=xlsx, zebra=False,
     )
 
 

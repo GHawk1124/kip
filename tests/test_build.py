@@ -89,7 +89,8 @@ a = 184 * MPa
 b = 112.5 * MPa
 '''
     doc = build(source=src, path="doc.py")
-    assert "Margin 0.636." in doc.results["t"].text
+    pdf = pymupdf.open(stream=compile_pdf(emit(doc)), filetype="pdf")
+    assert "Margin 0.636." in "".join(page.get_text() for page in pdf)
 
 
 def test_failed_block_does_not_abort_non_strict_build():

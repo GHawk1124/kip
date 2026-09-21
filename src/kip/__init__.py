@@ -8,7 +8,7 @@ from .api import build_pdf
 from .authoring import run_document, calculation, read_records
 from .content import (
     Column, Drawing, Figure, Series, Source, Sources, Table, strip_units,
-    Symbol, Math, nomenclature, plot,
+    Symbol, Math, nomenclature, inputs_table, plot,
 )
 from .sheets import Constant, Constants, Sheet
 from .req import (
@@ -28,7 +28,7 @@ __all__ = [
     # rich content a block can bind
     "Figure", "Series", "Table", "Column", "Drawing", "Source", "Sources",
     "strip_units",
-    "Symbol", "Math", "nomenclature", "plot",
+    "Symbol", "Math", "nomenclature", "inputs_table", "plot",
     "build_pdf",
     "run_document", "calculation", "read_records",
     # spreadsheet inputs

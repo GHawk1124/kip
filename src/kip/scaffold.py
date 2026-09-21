@@ -30,10 +30,13 @@ def dependency(source: str | None = None, *, cad: bool = False) -> str:
 
 
 def create_project(root: Path, *, title: str | None = None,
-                   template: str = "basic", source: str | None = None) -> list[Path]:
+                   template: str = "basic", source: str | None = None,
+                   columns: int | None = None) -> list[Path]:
     """Populate an empty directory. Never overwrite an existing project."""
     from .render.layout import Layout, PageSpec
 
+    if columns is not None:
+        PageSpec(columns=columns)  # Validate before writing any files.
     available = sorted(p.name for p in TEMPLATES.iterdir() if p.is_dir())
     if template not in available:
         raise ValueError(f"unknown template {template!r}; choose {', '.join(available)}")
@@ -47,6 +50,13 @@ def create_project(root: Path, *, title: str | None = None,
     for file in (TEMPLATES / template).iterdir():
         if file.is_file():
             shutil.copyfile(file, root / file.name)
+    if template == "component":
+        from .packet import create_inputs
+        create_inputs(root)
+        requirements_path = root / "requirements.toml"
+        requirements = tomlkit.parse(requirements_path.read_text(encoding="utf-8"))
+        requirements["item"].update(id=slug.upper(), name=doc_title)
+        requirements_path.write_text(tomlkit.dumps(requirements), encoding="utf-8")
     pyproject = tomlkit.document()
     pyproject["project"] = {"name": slug, "version": "0.1.0",
                             "description": doc_title, "requires-python": ">=3.12",
@@ -58,6 +68,8 @@ def create_project(root: Path, *, title: str | None = None,
     lp = root / "layout.toml"
     layout = Layout.load(lp) if lp.exists() else Layout(page=PageSpec())
     layout.page.title = doc_title
+    if columns is not None:
+        layout.page.columns = columns
     layout.save(lp)
     skill = root / ".agents" / "skills" / "kip-authoring" / "SKILL.md"
     skill.parent.mkdir(parents=True)

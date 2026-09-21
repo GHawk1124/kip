@@ -10,6 +10,7 @@ from ..doc.kernel import BlockResult, Document
 from ..math.handcalc_bridge import MITEX_VERSION
 from ..units import fmt_quantity
 from .layout import Layout
+from ..prose import headings, literal, quote, transform
 
 __all__ = ["emit", "emit_body", "emit_debug", "collect_sources", "TYPST_LIB",
            "LILAQ_VERSION", "CETZ_VERSION"]
@@ -29,7 +30,7 @@ _PAGE_BREAKS = ("false", "true", "before", "after", "both")
 
 def _s(value) -> str:
     """Quote a Python string as a Typst string literal."""
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return quote(value)
 
 
 def _opt(value) -> str:
@@ -78,17 +79,7 @@ def _markdown_to_typst(text: str) -> str:
     Prose is authored as Markdown-ish text because that is what an AI writes
     naturally; Typst markup otherwise passes through unchanged.
     """
-    out: list[str] = []
-    for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("#") and not stripped.startswith("#("):
-            level = len(stripped) - len(stripped.lstrip("#"))
-            rest = stripped[level:].strip()
-            if rest:
-                out.append("=" * level + " " + rest)
-                continue
-        out.append(line)
-    return "\n".join(out)
+    return headings(text)
 
 
 def _resolve_refs(text: str, known_blocks: dict[str, str],
@@ -114,7 +105,7 @@ def _resolve_refs(text: str, known_blocks: dict[str, str],
         if target not in known_blocks:
             return target + m.group("tail")
         shown = known_blocks[target] or target
-        return f"#link(label({_s('blk-' + target)}))[{shown}]" + tail(m)
+        return f"#link(label({_s('blk-' + target)}))[{literal(shown)}]" + tail(m)
 
     def req(m):
         return ("#box(fill: kip-colors.chip, inset: (x: 3pt, y: 0pt), "
@@ -128,9 +119,14 @@ def _resolve_refs(text: str, known_blocks: dict[str, str],
         return (f"#kip-cite({n}, {_s(source.short())}, url: {_opt(source.url)})"
                 + tail(m))
 
-    text = re.sub(r"@blk:([A-Za-z_][A-Za-z0-9_]*)(?P<tail>;?)", blk, text)
-    text = re.sub(r"@src:([A-Za-z_][A-Za-z0-9_\-]*)(?P<tail>;?)", src, text)
-    text = re.sub(r"@req:([A-Za-z][A-Za-z0-9_\-]*)(?P<tail>;?)", req, text)
+    # Each pass re-scans literals so inserted link labels cannot become new
+    # references in a later pass.
+    for pattern, replacement in (
+        (r"@blk:([A-Za-z_][A-Za-z0-9_]*)(?P<tail>;?)", blk),
+        (r"@src:([A-Za-z_][A-Za-z0-9_\-]*)(?P<tail>;?)", src),
+        (r"@req:([A-Za-z][A-Za-z0-9_\-]*)(?P<tail>;?)", req),
+    ):
+        text = transform(text, lambda part: re.sub(pattern, replacement, part))
     return text
 
 # rich content
@@ -166,7 +162,7 @@ def _mark(name: str | None) -> str:
     return _s(key)
 
 
-def _figure(fig: Figure, *, snapped: bool = False) -> str:
+def _figure(fig: Figure, *, snapped: bool = False, width_mm: float | None = None) -> str:
     """Render a :class:`Figure` as a lilaq diagram -- fully vector."""
     parts: list[str] = []
     for s in fig.series:
@@ -184,17 +180,20 @@ def _figure(fig: Figure, *, snapped: bool = False) -> str:
         if s.color:
             args.append(f"color: rgb({_s(s.color)})")
         if s.label:
-            args.append(f"label: [{s.label}]")
+            args.append(f"label: {_cell(None, s.label)}")
         parts.append(f"  {call}({', '.join(args)}),")
 
-    opts = [f"  width: {_num(fig.width)}mm", f"  height: {_num(fig.height)}mm",
+    # Lilaq's width describes the data area. Reserve room for axes in narrow
+    # columns; the Typst wrapper fits unusually long labels as a final fallback.
+    width = min(fig.width, max(10, width_mm - 35)) if width_mm is not None else fig.width
+    opts = [f"  width: {_num(width)}mm", f"  height: {_num(fig.height)}mm",
             '  fill: rgb("#fdfbf4")']
     if fig.xlabel:
-        opts.append(f"  xlabel: [{fig.xlabel}]")
+        opts.append(f"  xlabel: {_cell(None, fig.xlabel)}")
     if fig.ylabel:
-        opts.append(f"  ylabel: [{fig.ylabel}]")
+        opts.append(f"  ylabel: {_cell(None, fig.ylabel)}")
     if fig.title:
-        opts.append(f"  title: [{fig.title}]")
+        opts.append(f"  title: {_cell(None, fig.title)}")
     if fig.xscale == "log":
         opts.append('  xscale: "log"')
     if fig.yscale == "log":
@@ -206,7 +205,7 @@ def _figure(fig: Figure, *, snapped: bool = False) -> str:
 
     markup = "#lq.diagram(\n" + ",\n".join(opts) + ",\n" + "\n".join(parts) + "\n)"
     if snapped:
-        markup = markup.replace(f"{_num(fig.width)}mm", f"calc.max(1, calc.floor({_num(fig.width)}mm / g)) * g", 1)
+        markup = markup.replace(f"{_num(width)}mm", f"calc.max(1, calc.floor({_num(width)}mm / g)) * g", 1)
         markup = markup.replace(f"{_num(fig.height)}mm", f"calc.max(1, calc.floor({_num(fig.height)}mm / g)) * g", 1)
         return "#context { let g = kip-grid.get();\nshow box: it => {\n if type(it.inset) == dictionary and it.inset.keys().sorted() == (\"bottom\", \"left\", \"right\", \"top\") and it.inset.values().any(v => calc.abs(v / g - calc.round(v / g)) > 0.0001) {\n [#show box: it => it\n#box(inset: it.inset.map(v => calc.ceil(v / g) * g), it.body)]\n } else { it }\n}\n" + markup[1:] + "\n}"
     return markup
@@ -300,21 +299,20 @@ def _table_kwargs(tbl: Table, xlsx_href: str | None) -> dict:
 
 def _result_chip(block, result: BlockResult) -> str:
     """Spreadsheet-style output marker showing the block's final value."""
-    if block.kind not in ("calc", "calculation") or not result.values:
+    if block.kind not in ("calc", "calculation"):
         return "none"
     from ..math.handcalc_bridge import last_assigned_names
     from ..math.printer import render_name
 
-    names = [n for n in last_assigned_names(block.source) if n in result.values]
-    if not names:
-        return "none"
-    name = names[-1]
-    from ..authoring import Calculation
-    calculation = result.values[name]
-    if isinstance(calculation, Calculation):
+    calculation = result.calculation
+    if calculation is not None:
         name = last_assigned_names(calculation.source)[-1]
         value = fmt_quantity(calculation.values[name], calculation.precision)
     else:
+        names = [n for n in last_assigned_names(block.source) if n in result.values]
+        if not names:
+            return "none"
+        name = names[-1]
         value = fmt_quantity(result.values[name], block.precision)
     return f"result-chip(${render_name(name)}$, {_s(value)})"
 
@@ -345,7 +343,7 @@ def _section_heading(block) -> str:
         raise ValueError(
             f"block {block.id}: section={level} needs a label to use as the "
             'heading, e.g. # %% text intro "Requirements" section=1')
-    return f"#kip-section({level})[{label}]\n"
+    return f"#kip-section({level})[{literal(label)}]\n"
 
 
 def _emit_block(block, result: BlockResult, known: dict[str, str],
@@ -356,6 +354,11 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
     # it here as well would print the same words twice.
     lbl = "none" if block.section else _opt(block.meta.get("label"))
 
+    if result.state != "PRESENT":
+        status = (f"#kip-text(id: {bid}, label: {lbl})["
+                  f"#strong[{literal(result.state)}] {literal(result.reason)}]")
+        return f"#block(sticky: true, spacing: 0pt)[{status}]" if block.meta.get("keep_next") == "true" else status
+
     if result.failed:
         return (f"#kip-error(id: {bid}, "
                 f"message: {_s(result.error or 'unknown error')}, "
@@ -365,7 +368,12 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
 
     if kind == "text":
         body = _resolve_refs(_markdown_to_typst(result.text or ""), known, sources)
-        return f"#kip-text(id: {bid}, label: {lbl})[\n{body}\n]"
+        if not body.strip() and block.section:
+            # Keep a heading-only cell attached to the next visible content.
+            # An empty kip-text box would consume its sticky heading instead.
+            return f'#kip-anchor({bid}, "text")'
+        from .diagnostics import mark
+        return f"#kip-text(id: {bid}, label: {lbl})[\n{mark(block, body, prose=True)}\n]"
 
     if kind == "given":
         from ..math.printer import render_name
@@ -396,14 +404,11 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
         return f"#kip-controlled(id: {bid}, label: {lbl}, rows: ({rows},))"
 
     if kind == "verify":
-        rows = ", ".join(
-            "(id: {}, method: {}, result: {}, status: {}, passed: {})".format(
-                _s(c.req_id), _s(c.method.title()),
-                _s(f"{fmt_quantity(c.value)} {c.criterion}"),
-                _s(c.status), "true" if c.passed else "false")
-            for c in result.checks
-        )
-        return f"#kip-verify(id: {bid}, label: {lbl}, rows: ({rows},))"
+        from dataclasses import replace
+        table = Table(["Requirement", "Result", "Evidence", "Status"], [
+            (c.req_id, f"{fmt_quantity(c.value)} {c.criterion}", c.evidence or "-", c.status)
+            for c in result.checks])
+        return _emit_block(replace(block, kind="table"), replace(result, content=table), known, sources, assets, width_mm)
 
     if kind == "requirements":
         reqs = result.content
@@ -432,7 +437,7 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
     if kind == "plot" and isinstance(result.content, Figure):
         return (f"#kip-figure(id: {bid}, label: {lbl}, "
                 f"caption: {_opt(block.meta.get('caption'))})"
-                f"[\n{_figure(result.content, snapped=True)}\n]")
+                f"[\n{_figure(result.content, snapped=True, width_mm=width_mm)}\n]")
 
     if kind == "draw" and isinstance(result.content, Drawing):
         cap = result.content.caption or block.meta.get("caption")
@@ -550,9 +555,10 @@ def emit_body(doc: Document, layout: Layout | None = None,
             continue
         pos = layout.position(block.id)
         if pos is None and "columns" in block.meta:
-            flow_columns = int(block.meta["columns"])
-            if flow_columns not in (1, 2):
-                raise ValueError(f"block {block.id}: columns must be 1 or 2")
+            setting = block.meta["columns"]
+            if setting not in ("1", "2", "default"):
+                raise ValueError(f"block {block.id}: columns must be 1, 2, or default")
+            flow_columns = layout.page.columns if setting == "default" else int(setting)
         if pos is not None:
             width_mm = pos.w
         elif layout.width_hint is not None:
@@ -579,7 +585,8 @@ def emit_body(doc: Document, layout: Layout | None = None,
             options.append(f"{key}: {value}")
         if options:
             markup = re.sub(r"^(#kip-[a-z]+\()", lambda m: m[1] + ", ".join(options) + ", ", markup, count=1)
-        markup = f"#[{markup}#label({_s('blk-' + block.id)})]"
+        from .diagnostics import mark
+        markup = mark(block, f"#[{markup}#label({_s('blk-' + block.id)})]")
 
         if pos is not None:
             y = pos.y
@@ -613,6 +620,13 @@ def emit_body(doc: Document, layout: Layout | None = None,
                     gutter = column_geometry(flow_columns)[1]
                     flowed.append(f"#columns({flow_columns}, gutter: {_num(gutter)}mm)[")
                 opened_columns = flow_columns
+            column_break = block.meta.get("columnbreak", "false")
+            if column_break not in ("true", "false"):
+                raise ValueError(f"block {block.id}: columnbreak must be true or false")
+            if column_break == "true":
+                if flow_columns != 2:
+                    raise ValueError(f"block {block.id}: columnbreak requires two-column flow")
+                flowed.append("#colbreak()")
             if heading:
                 flowed.append(heading)
             flowed.append(markup)
@@ -650,6 +664,12 @@ def emit(doc: Document, layout: Layout | None = None,
         layout = replace(layout, page=replace(layout.page, **reports[0].page))
     page = layout.page
 
+    if doc.packet is not None and doc.packet.identity is not None:
+        item = doc.packet.identity
+        page = replace(page, title=page.title or item.name or item.id,
+                       document=page.document or item.id, revision=page.revision or item.revision)
+        layout = replace(layout, page=page)
+
     tf = page.title_fields()
     fields = ("(" + ", ".join(f"({_s(k)}, {_s(v)})" for k, v in tf) + ",)"
               if tf else "()")
@@ -672,6 +692,8 @@ def emit(doc: Document, layout: Layout | None = None,
             intro_id = block.id
             known = {b.id: b.meta.get("label", "") for b in doc.blocks}
             content = _resolve_refs(_markdown_to_typst(result.text or ""), known, collect_sources(doc))
+            from .diagnostics import mark
+            content = "\n" + mark(block, content, prose=True)
             intro = (f"(id: {_s(block.id)}, "
                      f"label: {_opt(block.meta.get('label'))}, "
                      f"level: {block.section if block.section else 'none'}, "
@@ -712,7 +734,8 @@ def emit(doc: Document, layout: Layout | None = None,
     for bid, result in doc.results.items():
         if isinstance(result.content, Drawing) and result.content.svg is not None:
             files[f"drawings/{bid}.svg"] = result.content.svg
-    return files
+    from .diagnostics import TypstProject
+    return TypstProject(files, doc.path)
 
 
 def emit_debug(doc: Document, layout: Layout | None = None) -> str:

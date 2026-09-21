@@ -155,7 +155,8 @@ def test_compliance_matrix_marks_unverified_as_open(tree):
     assert rows[0][-1] == "OPEN"
     tree.verify("REQ-014", 1.0, ">= 0", evidence="margin")
     rows, _ = compliance_matrix(tree).display_rows()
-    assert rows[0][-1] == "PASS" and rows[0][3] == "margin"
+    assert rows[0][-1] == "PASS" and "margin" in rows[0][2]
+    assert len(rows[0]) == 4
 
 
 def test_variables_table_shows_where_each_value_comes_from(tree):

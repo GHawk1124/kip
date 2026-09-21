@@ -216,7 +216,7 @@ def test_sections_become_the_pdf_outline(tmp_path):
 
 def test_a_section_label_is_not_also_printed_as_a_block_title():
     out = emit_body(build(source=SECTIONS))
-    assert "#kip-section(1)[Requirements]" in out
+    assert '#kip-section(1)[#text("Requirements")]' in out
     assert 'label: "Requirements"' not in out
 
 

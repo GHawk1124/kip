@@ -1,0 +1,7 @@
+[item]
+id = "COMP-001"
+name = "Component"
+revision = "A"
+
+# Add [req.REQ-001] with text and verification, and [vars.name] for
+# requirement-controlled values. Empty requirements remain OPEN.

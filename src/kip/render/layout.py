@@ -60,6 +60,8 @@ class PageSpec:
     extra_fields: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
+        if type(self.columns) is not int or self.columns not in (1, 2):
+            raise ValueError("columns must be 1 or 2")
         if not math.isfinite(self.grid_step) or self.grid_step <= 0:
             raise ValueError("grid_step must be a finite positive size in mm")
 

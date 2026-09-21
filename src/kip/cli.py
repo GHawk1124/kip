@@ -41,7 +41,7 @@ err = Console(stderr=True)
 
 
 def _fail(message: str, code: int = 1) -> None:
-    err.print(f"[bold red]error[/bold red] {message}")
+    err.print("error " + message, style="red", markup=False, soft_wrap=True)
     raise typer.Exit(code)
 
 
@@ -86,7 +86,8 @@ def _resolve_doc(path: Path | None) -> Path:
 def new(
     name: str = typer.Argument(..., help="Project directory to create."),
     title: str = typer.Option(None, "--title", "-t", help="Document title."),
-    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, or showcase (includes CAD)."),
+    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, component, or showcase (includes CAD)."),
+    columns: int = typer.Option(None, "--columns", "-c", min=1, max=2, help="Default page columns (1 or 2)."),
     source: str = typer.Option(None, "--source", help="kip package path or URL; defaults to this installation's source."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Skip uv sync."),
 ) -> None:
@@ -95,7 +96,7 @@ def new(
 
     root = Path(name)
     try:
-        files = create_project(root, title=title, template=template, source=source)
+        files = create_project(root, title=title, template=template, source=source, columns=columns)
     except (ValueError, OSError) as e:
         _fail(str(e))
     console.print(f"[green]created[/green] {root}/")
@@ -188,6 +189,7 @@ def preview(
 @app.command()
 def check(
     path: Path = typer.Argument(None, help="doc.py (default: ./doc.py)"),
+    render: bool = typer.Option(False, "--render", help="Also compile Typst without writing a PDF or exports."),
 ) -> None:
     """Validate and execute without rendering. Exits non-zero on any error."""
     doc_path = _resolve_doc(path)
@@ -207,6 +209,7 @@ def check(
                   f"{escape(r.block_id)}: {escape(r.error or '')}[/red]")
 
     unresolved = {k: v for k, v in document.graph.unresolved.items() if v}
+    n_warn += len(unresolved)
     for bid, names in unresolved.items():
         err.print(f"  [yellow]{escape(str(doc_path))}: {escape(bid)}: "
                   f"undefined: {escape(', '.join(sorted(names)))}[/yellow]")
@@ -237,6 +240,20 @@ def check(
                 f"{passed} verified, 0 open")
 
     total_err = n_err + len(failed) + req_failures
+    if document.packet is not None:
+        for stage, (state, reason) in document.packet.outstanding.items():
+            err.print(f"{stage}: {state} - {reason}", markup=False, soft_wrap=True)
+        total_err += len(document.packet.outstanding)
+    if render and not n_err and not failed:
+        from .render import emit, compile_pdf
+        from .render.layout import Layout
+        sidecar = doc_path.parent / "layout.toml"
+        layout = Layout.load(sidecar) if sidecar.exists() else Layout()
+        try:
+            compile_pdf(emit(document, layout))
+        except (ValueError, OSError) as exc:
+            err.print(str(exc), style="red", markup=False, soft_wrap=True)
+            total_err += 1
     if total_err:
         _fail(f"{total_err} error(s), {n_warn} warning(s)")
     console.print(
@@ -258,9 +275,12 @@ def show(
         table.add_column(col)
 
     position = {b: i for i, b in enumerate(document.graph.order)}
-    for block in sorted(document.ordered_blocks(), key=lambda b: position.get(b.id, 0)):
+    blocks = document.ordered_blocks()
+    if document.packet is None:
+        blocks = sorted(blocks, key=lambda b: position.get(b.id, 0))
+    for block in blocks:
         result = document.results.get(block.id)
-        deps = sorted(d for d in document.graph.edges[block.id] if d != "__prelude__")
+        deps = sorted(d for d in document.graph.edges.get(block.id, ()) if d != "__prelude__")
         from rich.markup import escape
 
         from .units import fmt_quantity
@@ -269,6 +289,8 @@ def show(
             f"{k}={fmt_quantity(v)}"
             for k, v in list((result.values if result else {}).items())[:2]
         ))
+        if result and result.state != "PRESENT":
+            vals = escape(f"{result.state}: {result.reason}")
         table.add_row(
             str(position.get(block.id, "")), block.id, block.kind,
             ", ".join(deps) or "-",
@@ -283,7 +305,7 @@ def show(
 def layout_cmd(
     path: Path = typer.Argument(None, help="doc.py (default: ./doc.py)"),
     auto: bool = typer.Option(False, "--auto", help="Reflow non-pinned blocks."),
-    columns: int = typer.Option(None, "--columns", "-c", help="Column count."),
+    columns: int = typer.Option(None, "--columns", "-c", min=1, max=2, help="Column count."),
 ) -> None:
     """Inspect or regenerate layout.toml."""
     doc_path = _resolve_doc(path)

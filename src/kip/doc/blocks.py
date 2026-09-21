@@ -12,6 +12,7 @@ BlockKind = str
 
 #: Supported block kinds.
 KINDS: tuple[str, ...] = (
+    "packet",    # opt-in component structure, expanded by the packet planner
     "prelude",   # implicit: imports and setup above the first marker
     "text",      # prose, with @val:/@blk:/@req:/@src: citations
     "given",     # input quantities -- rendered as marked INPUT

@@ -21,7 +21,7 @@ from .units import fmt_quantity, ureg
 
 __all__ = [
     "Figure", "Series", "Table", "Column", "Drawing", "Source", "Sources",
-    "strip_units", "RichContent", "Symbol", "Math", "nomenclature", "plot",
+    "strip_units", "RichContent", "Symbol", "Math", "nomenclature", "inputs_table", "plot",
 ]
 
 
@@ -55,7 +55,7 @@ class Series:
 
     x: list[float]
     y: list[float]
-    label: str | None = None
+    label: str | Symbol | Math | None = None
     kind: str = "line"           # line | scatter | bar
     mark: str | None = None      # o, square, triangle, ...
     dash: str | None = None      # dashed, dotted, ...
@@ -71,9 +71,9 @@ class Figure:
     author restating it.
     """
 
-    xlabel: str | None = None
-    ylabel: str | None = None
-    title: str | None = None
+    xlabel: str | Symbol | Math | None = None
+    ylabel: str | Symbol | Math | None = None
+    title: str | Symbol | Math | None = None
     width: float = 120.0          # mm
     height: float = 70.0          # mm
     xscale: str = "linear"        # linear | log
@@ -90,9 +90,9 @@ class Figure:
             raise ValueError("plot x and y must have the same length")
         xu = xunit or _infer_unit(x)
         yu = yunit or _infer_unit(y)
-        if self.xlabel and xu and "(" not in self.xlabel:
+        if isinstance(self.xlabel, str) and self.xlabel and xu and "(" not in self.xlabel:
             self.xlabel = f"{self.xlabel} ({xu})"
-        if self.ylabel and yu and "(" not in self.ylabel:
+        if isinstance(self.ylabel, str) and self.ylabel and yu and "(" not in self.ylabel:
             self.ylabel = f"{self.ylabel} ({yu})"
         self.series.append(Series(
             x=strip_units(x, xu), y=strip_units(y, yu),
@@ -429,8 +429,14 @@ class Sources(dict):
         return cls(merged)
 
 
-def nomenclature(entries: dict[str, str | tuple[str, str]], **options) -> Table:
-    """Symbol -> description or (description, unit), rendered as a math table."""
+def nomenclature(entries=None, *sources, overrides=None, **options) -> Table:
+    """A symbol table from document quantities, explicit sources, or a dictionary."""
+    if not isinstance(entries, dict):
+        from .quantities import generated_nomenclature
+        return generated_nomenclature((entries, *sources) if entries is not None else sources,
+                                      overrides, **options)
+    if sources or overrides:
+        raise ValueError("use a metadata source with overrides, or a standalone symbol dictionary")
     rows = []
     for name, entry in entries.items():
         description, unit = (entry, "-") if isinstance(entry, str) else entry
@@ -438,6 +444,12 @@ def nomenclature(entries: dict[str, str | tuple[str, str]], **options) -> Table:
     return Table([Column("symbol", "Symbol", align="left"),
                   Column("definition", "Definition", align="left"),
                   Column("unit", "Unit", align="left")], rows, **options)
+
+
+def inputs_table(*sources, **options) -> Table:
+    """Show captured calculation inputs, or all Constants/Requirements inputs."""
+    from .quantities import inputs_table as generate
+    return generate(*sources, **options)
 
 
 def plot(x, y, *, label=None, mark=None, dash=None, color=None,

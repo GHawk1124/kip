@@ -11,6 +11,7 @@ import typst
 from ..doc.kernel import Document
 from .emitter import emit
 from .layout import Layout
+from .diagnostics import RenderError
 
 __all__ = [
     "compile_pdf", "compile_svg", "block_geometry", "BlockGeometry",
@@ -56,12 +57,18 @@ def compile_pdf(
     kw = _common_kwargs()
     if deterministic:
         kw["timestamp"] = FIXED_TIMESTAMP
-    return typst.compile(files, **kw)
+    try:
+        return typst.compile(files, **kw)
+    except typst.TypstError as exc:
+        raise RenderError(exc, files) from exc
 
 
 def compile_svg(files: dict[str, bytes]) -> list[bytes]:
     """Compile to SVG; returns one SVG per page."""
-    out = typst.compile(files, format="svg", **_common_kwargs())
+    try:
+        out = typst.compile(files, format="svg", **_common_kwargs())
+    except typst.TypstError as exc:
+        raise RenderError(exc, files) from exc
     if isinstance(out, bytes):
         return [out]
     return list(out)
@@ -84,7 +91,10 @@ class BlockGeometry:
 
 def block_geometry(files: dict[str, bytes]) -> list[BlockGeometry]:
     """Recover block positions from a single Typst query."""
-    raw = typst.query(files, "<kipblk>", field="value", **_common_kwargs())
+    try:
+        raw = typst.query(files, "<kipblk>", field="value", **_common_kwargs())
+    except typst.TypstError as exc:
+        raise RenderError(exc, files) from exc
     data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
     out: list[BlockGeometry] = []
     for item in data:

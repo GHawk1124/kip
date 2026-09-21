@@ -40,6 +40,67 @@ def test_shorthand_bad_quotes_have_source_location():
     assert parse('# %% text section "Section at Y = 0"')[0].meta["label"] == "Section at Y = 0"
 
 
+def test_title_only_markers_preserve_labels_references_and_editing():
+    source = '''from kip import *
+# %% text "Scope"
+"""See @blk:bending_moment: @val:M."""
+# %% inputs "Loads"
+P = 2 * kN
+L = 100 * mm
+# %% calc "Bending moment" unit=kN*m
+M = P * L
+'''
+    document = build(source=source)
+    assert not document.warnings
+    assert [b.id for b in document.ordered_blocks()] == ["scope", "loads", "bending_moment"]
+    assert document.blocks[-1].meta["label"] == "Bending moment"
+    edited = replace_body(source, document.blocks[-1], "M = 2 * P * L")
+    assert build(source=edited).value("M").to("kN*m").magnitude == pytest.approx(.4)
+    assert parse('# %% text "3D geometry"')[0].id == "text_3d_geometry"
+    assert parse('# %% text "Scope" id=stable')[0].id == "stable"
+    with pytest.raises(KipSyntaxError, match="duplicate block id"):
+        parse('# %% text "Scope"\n# %% text "Scope"')
+
+
+def test_content_expressions_execute_once_and_leave_no_synthetic_bindings(tmp_path):
+    source = '''from kip import *
+calls = []
+def make_table():
+    calls.append("made")
+    return Table(["Case", "Load"], [("LC-1", 10*kN)], xlsx="loads.xlsx")
+# %% table "Loads"
+make_table()
+# %% plot "Sweep"
+plot([1, 2], [3, 4]).line([1, 2], [5, 6])
+# %% draw "Sketch"
+Drawing(body="circle((0,0), radius: 1)")
+# %% sources "References"
+Sources(book=Source(title="Engineering handbook"))
+'''
+    path = tmp_path / "doc.py"
+    path.write_text(source)
+    document = build(path)
+    assert document.value("calls") == ["made"]
+    assert all(not r.values for bid, r in document.results.items() if bid != "__prelude__")
+    assert len(document.results["sweep"].content.series) == 2
+    out = build_pdf(path)
+    text = "".join(p.get_text() for p in pymupdf.open(out))
+    assert "LC-1" in text and "Engineering handbook" in text
+    assert load_workbook(out.parent / "loads.xlsx").active["A2"].value == "LC-1"
+
+
+def test_content_expression_wins_over_an_earlier_assignment():
+    document = build(source='''from kip import *
+# %% table "Results"
+first = Table(["Old"], [[1]])
+Table(["Selected"], [[2]])
+''')
+    assert document.results["results"].content.headers == ["Selected"]
+    from kip.doc.kernel import ExecutionError
+    with pytest.raises(ExecutionError, match="last expression must produce a Table"):
+        build(source='from kip import *\n# %% table "Wrong"\n42\n')
+
+
 def test_math_cells_compile_and_export_without_interpreting_prose(tmp_path):
     source = '''from kip import *
 import sympy as sp

@@ -26,10 +26,10 @@ Keep editable prose in doc.py, geometry in cad.py, computations in analysis.py.
 Do not generate doc.py with another Python script. Markers delimit Python blocks:
 
 ```python
-# %% text scope "Scope"
+# %% text "Scope"
 """Stress is @val:sigma_br; see @blk:bearing and @req:REQ-001."""
 
-# %% inputs geometry "Geometry"
+# %% inputs "Geometry"
 d_pin = 32 * mm
 t_plate = 16 * mm
 
@@ -41,30 +41,96 @@ sigma_br = P / (d_pin * t_plate)      # -> MPa
 
 The last block is empty: it places the `loads` table built in the prelude.
 
-Marker syntax is `# %% kind id "Optional label" key=value`. IDs are unique Python
-identifiers. Old `# %% kip.calc id=bearing label="Bearing" result_unit=MPa` works.
+Use `# %% kind "Title" key=value`; the title supplies an id such as
+`"Bending moment"` -> `bending_moment`. Use `# %% kind id "Title"` for an id
+that survives retitling, or `# %% kind id` for an unlabelled cell. IDs must be
+unique. Old `# %% kip.calc id=bearing label="Bearing" result_unit=MPa` works.
 Blocks render in file order and execute in dependency order. Assign each result
 in one block; avoid hidden mutation between blocks. Units and math functions are
 bare names (`mm`, `kN`, `sqrt`), not dotted calls inside calculations. Name the
 unit a result is read in beside the equation, as `M = P * L    # -> kN*m`; avoid
 `.to()` in calc blocks (`unit=MPa` on the marker still works).
-Put setup, imports and functions in the prelude. A rich-content block either
-assigns its object or is empty, in which case it places the object already bound
-to the block's own id -- so a table built in the prelude needs only its marker
-line. Text blocks contain a triple-quoted string, with
-headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
-`@src:key`. A block ID and its output variable can differ.
+Put setup, imports and functions in the prelude. A rich-content block uses its
+last expression: `Table(...)`, `Sheet.load(...)`, `Drawing.load(...)`, `plot(...)`,
+or `Sources.load(...)`. Assign only when another cell needs the object. Existing
+assignments and empty cells naming an existing object remain supported.
+Text blocks contain Python strings with Typst markup: `*strong*`, `_emphasis_`,
+`$math$`, `-` bullets, `+` numbered items, and references `@val:name`, `@blk:id`,
+`@req:ID`, `@src:key`. Indent nested lists. Native `#list`, `#enum`, `#set`, and
+`#show` work; Markdown-style `## Heading` also works. Headings inside fenced code
+stay literal. Raw strings (`r"""..."""`) preserve backslash escapes; f-strings
+can interpolate Python values. References inside escaped text, inline/fenced code,
+comments and native Typst strings stay literal. Titles and inserted `@val:` values
+are literal text. An empty text block can supply a heading without placeholder prose.
 
 ## Content
 
-- `calculation`: bind a function decorated with `@calculation` from analysis.py.
+### Component packet
+
+Use `kip new folder --template component` for a full component packet. One empty
+`# %% packet component` declaration supplies the standard section order, overview,
+input tables, nomenclature, requirements, references and final compliance matrix.
+It binds `C` and `reqs`; do not bind those names again. Put reusable calculations
+in analysis.py and call `analysis.size(C)` in a `calculation` cell.
+
+Default stages are overview, requirements, inputs, preliminary, sizing, design, analysis,
+manufacturing, test, compliance. Drawings default to design; calculations, plots
+and tables to analysis; inputs/controlled cells to inputs; verify cells to
+compliance; prose to overview. Use `stage=sizing` etc. for placement exceptions.
+Inline `preliminary`, `sizing` and `analysis` markers are aliases for `calc` with that stage.
+Authored order is preserved within each stage. Use `section=2` for subsections.
+
+The component scaffold creates header-only workbooks; fill the existing headers:
+- constants.xlsx / Inputs: key, value, unit, description, basis, symbol, source.
+- references.xlsx / Inputs: key, title, author, publisher, year, section, url, note.
+- references.xlsx / Documents: description, organization, number.
+- process.xlsx / Inputs: id, operation, acceptance.
+- tests.xlsx / Inputs: id, requirement, procedure, criterion, result, evidence.
+
+All live under input/. Requirements use requirements.toml, or alternatively
+input/requirements.xlsx / Inputs with id, text, verification. Never supply both.
+Reference/Document sheets are optional supporting material. Missing files and
+valid header-only sheets show OPEN; unavailable inputs block dependent cells.
+Test result/evidence blanks stay OPEN. PRESENT never means verified. Compliance
+uses the final recorded `reqs.verify(...)` results, never inferred evidence.
+Explicit exclusions use `na="manufacturing,test"` on the packet declaration
+or top-level `na = ["manufacturing", "test"]` in packet.toml.
+Do not put work in an excluded stage. Bad headers, units, duplicate keys and
+unknown test requirement ids remain errors. `kip check` fails on required gaps.
+
+The optional packet.toml is editable convention, not a fixed document structure:
+- `order = ["overview", "preliminary", "design", "review"]` reorders/removes/adds
+  sections. Use `stage=review` for custom work; reassign cells in removed stages.
+- `[sections.review]` accepts `title`, `columns` (1, 2, or "default"), `required`
+  (false allows visible gaps), and `generate` (false replaces generated tables
+  with authored cells while retaining input validation and status reporting).
+- `[defaults]` maps canonical cell kinds to stages, e.g. `calc = "preliminary"`.
+- `[sheets.constants]` etc. override `path`, `sheet`, `columns`, `required`,
+  `stage`, `optional`, `enabled`. Custom sheets need path, columns, stage;
+  sheet defaults to Inputs. Columns are expected headers; required fields need
+  nonempty row values. Built-in readers keep their essential field names.
+- Removed stages stop expecting their sheets. Move a sheet's stage to retain it.
+  `enabled=false` disables a reader; disabling constants/requirements also frees
+  C/reqs for custom setup. Unknown settings are errors, not silent fallbacks.
+- Top-level `requirements_file` changes the requirements TOML path;
+  `[sheets.requirements]` configures its workbook alternative.
+- `# %% packet component config="team.toml"` selects another configuration file.
+  Input paths remain relative to doc.py. Build/watch reloads configuration edits.
+
+Use `kip check --render` to catch Typst compilation errors without exporting a
+PDF or workbook. The diagnostic names the original cell and, for ordinary
+multiline prose, the source line; generated expressions point to the cell.
+
+### Individual content
+
+- `calculation`: call a function decorated with `@calculation` from analysis.py.
   Set up its inputs before `# equations` and write ordinary straight-line
   arithmetic after that marker, one `# -> unit` per result that needs a display
   unit. `return locals()` is optional. The function call is not printed; Kip
   renders the validated arithmetic and computed values. Access results as
-  attributes. Use this kind for dotted calls; inline `calc` retains its stricter
+  attributes when the call is assigned. Use this kind for dotted calls; inline `calc` retains its stricter
   syntax checks.
-- `Constants.load("input/constants.xlsx")` reads a `key`/`value` sheet whose
+- `Constants.load()` reads `input/constants.xlsx`, a `key`/`value` sheet whose
   optional `unit`, `description`, `basis`, `symbol` and `source` columns supply
   everything else. Lookups (`C.rho_w`, `C["rho_w"]`) are pint quantities, so
   never multiply a constant by a unit again; `C.value("body_d", mm)` gives a
@@ -74,8 +140,9 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
   substitutes values into prose.
 - `Sheet.load(path, constants=C, unique="id", required=("target",))` reads any
   other input sheet, interpolates `{constant}` cells, and performs the checks a
-  document would otherwise write by hand. `sheet.table()` renders it with the
-  header row as column titles; `hide=(...)` drops columns such as keys and URLs.
+  document would otherwise write by hand. Table cells render sheets directly
+  with their existing headers; `.table(...)` selects columns or adds options.
+  `hide=(...)` drops columns such as keys and URLs.
   `sheet.sources(title="supplier_item")` turns catalogue rows into citations.
 - References live in a workbook: `Sources.load("input/references.xlsx")`. Each
   `Source` field reads the column of the same name (`key`, `title`, `author`,
@@ -107,11 +174,22 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
   Strings are literal text. Use `Symbol("sigma_br")`, SymPy expressions, or
   `Math("sigma_y / 2")` for math cells. `Column(..., math=True)` treats that
   column's identifier strings as symbols. `Symbol` also works as a column title.
-- Nomenclature is a table: `symbols = nomenclature({"sigma_br":
-  ("Bearing stress", "MPa"), "MS": "Margin of safety"})`.
-- `plot`: `fig = plot(xs, ys, xlabel="Thickness", ylabel="Stress")`.
+- `inputs_table(result)` builds a table from a calculation's scalar arguments and
+  actual reads of Constants, Requirements and upstream results. Values, definitions,
+  basis and sources are captured during the call. Pass several results to combine
+  their inputs, or `C`/`reqs` for all inputs. The table can precede the calculation.
+- `nomenclature()` derives the document's symbols from input, controlled and
+  calculation cells, even when placed first. `nomenclature(result)` limits it to
+  one calculation; `nomenclature(C)` lists constants. Metadata and direct aliases
+  supply descriptions; assignment comments and single-result inline calculation
+  titles fill local definitions. Missing definitions display `-`. Use
+  `overrides={"sigma_br": "Bearing stress"}` for exceptions. Conflicting descriptions
+  need an override; incompatible dimensions need narrower sources. Explicit
+  `nomenclature({"sigma_br": ("Bearing stress", "MPa")})` remains supported.
+- `plot`: `plot(xs, ys, xlabel="Thickness", ylabel="Stress")`.
   Chain `.line()`, `.scatter()`, `.bar()` for more series. Quantity arrays infer
-  units; `xunit`/`yunit` override them. `Figure(...)` gives full control.
+  units; `xunit`/`yunit` override them. Labels are literal strings; use `Math(...)`
+  or `Symbol(...)` for mathematical labels. `Figure(...)` gives full control.
 - `drawing` (alias `draw`): `drawing = Drawing(body="...CeTZ code...", width=80)`.
   Background is off; marker `panel=true` adds a tight padded panel.
 - CAD: `from kip.cad import load_build123d, cad_view, cad_section, cad_face`.
@@ -121,7 +199,7 @@ headings, Typst inline math, and references `@val:name`, `@blk:id`, `@req:ID`,
   `cad_face(planar_face, dxf="face.dxf")`. The showcase is the worked example.
 - `references` (alias `sources`): `refs = Sources(book=Source(title="...",
   author="...", year=2026, url="..."))`, cited with `@src:book`.
-- Requirements: load `reqs = Requirements.load("requirements.toml")` in the
+- Requirements: load `reqs = Requirements.load()` (`requirements.toml`) in the
   prelude. Use `reqs.verify("REQ-001", MS, ">= 0", evidence="margin")` in the
   same table block as `matrix = compliance_matrix(reqs)`. Use
   `variables_table(reqs)` for controlled symbols and `requirements_table(reqs)`
@@ -133,7 +211,15 @@ Edit `[page]` in layout.toml: `title`, `subtitle`, `author`, `project`, `documen
 `revision`, `date`, `checker`, `marking`, `grid_step` (mm), `frames` (opt-in section
 outlines), `section_numbering`, `columns` (1 or 2). Default layout flows automatically. First text
 block `wrap_title=true` wraps alongside the metadata box. Marker `columns=2`
-switches subsequent blocks to two columns; `columns=1` restores full width.
+switches subsequent blocks to two columns; `columns=1` restores full width;
+`columns=default` restores the document default. Every packet section resets to
+its `[sections.id].columns` setting or the document default. For a two-column
+default, use `kip new folder --columns 2`, `[page] columns = 2`, or
+`run_document(__file__, columns=2)`. Local switches allow part of a section to
+use another width. Calculations and plots adapt to narrow columns.
+Columns fill the left side first; `columnbreak=true` starts a cell in the next
+column. Use it for short blocks that should sit side by side. It requires
+two-column flow and keeps the cell's heading with its content.
 `section=N` turns a block's label into a numbered heading: 1 a section, 2 a
 subsection, 3 and beyond as deep as the document needs. Numbering, spacing and
 the PDF outline follow from it, so never type section numbers into a label.
