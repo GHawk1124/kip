@@ -1,0 +1,39 @@
+# Order, section names and column choices are entirely editable.
+order = ["overview", "requirements", "inputs", "preliminary", "sizing", "design",
+         "analysis", "manufacturing", "test", "compliance"]
+
+[sections.overview]
+generate = false
+columns = 1
+[sections.requirements]
+generate = false
+columns = 1
+[sections.inputs]
+generate = false
+columns = 1
+[sections.design]
+columns = 1
+[sections.analysis]
+generate = false
+[sections.manufacturing]
+columns = 1
+[sections.test]
+generate = false
+columns = 1
+[sections.compliance]
+columns = 1
+
+[sheets.constants]
+path = "input/design.xlsx"
+[sheets.references]
+path = "input/design.xlsx"
+sheet = "References"
+stage = "requirements"
+[sheets.documents]
+enabled = false
+[sheets.process]
+path = "input/design.xlsx"
+sheet = "Process"
+[sheets.tests]
+path = "input/design.xlsx"
+sheet = "Tests"

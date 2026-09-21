@@ -323,3 +323,10 @@ wraps beneath the title by default; `wrap_title=false` opts out. Existing inline
 calculations, `Sources(...)` objects and layout files remain supported.
 
 Development: `uv sync --extra cad`, `uv run pytest`, `uv build`.
+
+The independent `fluid_filter/` component example uses one editable workbook,
+configurable packet stages and mixed one/two-column sections. It retains the
+titanium / stainless seven-piece concept with a 0.250 in OD, 0.025 in wall inlet.
+Run `uv run doc.py` there for the PDF, STEP models and CSV sensitivity sweeps.
+Missing cloth calibration stays OPEN; nominal micron rating never substitutes
+for measured capillary diameter. Verification uses one plain compliance matrix.
