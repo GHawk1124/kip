@@ -17,9 +17,8 @@ from .req import (
 )
 from .units import MATH_NAMES, UNIT_NAMES, Q, fmt_quantity, ureg
 
-# Units and math functions are re-exported as bare names: handcalcs
-# renders `2.5 * u.kN` as the literal symbol \mathrm{u.kN}, and `math.sqrt(x)`
-# as \mathrm{math.sqrt} x.  Bare names are required for correct output.
+# Units and math functions are re-exported as bare names so a calc cell reads
+# `2.5 * kN` and `sqrt(x)` exactly as they are rendered.
 globals().update(UNIT_NAMES)
 globals().update(MATH_NAMES)
 

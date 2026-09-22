@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-__all__ = ["Block", "BlockKind", "KINDS", "CODE_KINDS", "HANDCALC_KINDS",
+__all__ = ["Block", "BlockKind", "KINDS", "CODE_KINDS", "MATH_KINDS",
            "CONTENT_KINDS"]
 
 BlockKind = str
@@ -39,8 +39,8 @@ CONTENT_KINDS: frozenset[str] = frozenset({
     "plot", "table", "draw", "sources", "requirements",
 })
 
-#: Kinds routed through handcalcs (and therefore subject to its constraints).
-HANDCALC_KINDS: frozenset[str] = frozenset({"given", "calc"})
+#: Kinds rendered from their own syntax, and therefore held to the calc grammar.
+MATH_KINDS: frozenset[str] = frozenset({"given", "calc"})
 
 
 @dataclass
@@ -58,10 +58,14 @@ class Block:
     body_start: int
     body_end: int
     meta: dict[str, str] = field(default_factory=dict)
+    #: older spellings found on the marker, reported as warnings
+    notes: list[str] = field(default_factory=list)
 
     # Populated by graph.analyze()
     defs: frozenset[str] = frozenset()
     refs: frozenset[str] = frozenset()
+    #: refs read while the cell runs (not later, inside a function body)
+    eager: frozenset[str] = frozenset()
     cites: tuple[tuple[str, str], ...] = ()
 
     @property
@@ -69,8 +73,8 @@ class Block:
         return self.kind in CODE_KINDS
 
     @property
-    def uses_handcalcs(self) -> bool:
-        return self.kind in HANDCALC_KINDS
+    def renders_math(self) -> bool:
+        return self.kind in MATH_KINDS
 
     @property
     def has_content(self) -> bool:
@@ -85,10 +89,7 @@ class Block:
     def result_units(self) -> list[tuple[str | None, str]]:
         """Requested unit conversions as ``(name_or_None, unit)`` pairs.
 
-        ``.to()`` inside a rendered line is unusable -- handcalcs
-        drops it silently or crashes -- so conversions are block metadata.
-
-        Two forms are accepted::
+        Deprecated marker form of ``# -> unit`` comments. Two forms are accepted::
 
             result_unit=MPa                    # applies to the last assignment
             result_unit="I_xx=mm**4, c_out=mm" # explicit per-name mapping

@@ -7,7 +7,9 @@ Use the existing project's style and requirements. For a new project run
 `kip new folder` (basic), `kip new folder --template requirements` (one object
 with controlled inputs and verification), or `kip new folder --template showcase`
 (all features, including optional build123d CAD). Each creates a uv project,
-layout.toml and this skill. Add dependencies with `uv add` from that folder.
+its input workbooks under input/, and this skill. Add dependencies with
+`uv add` from that folder. `kip migrate` converts an older project's
+requirements.toml and sources.toml into input/ workbooks.
 
 Run `uv run doc.py` to prepare assets and build. `uv run kip check` validates
 existing assets; `uv run kip build` also remains supported. `uv run kip preview` builds and
@@ -20,8 +22,8 @@ requirements; build validates Python execution but does not certify compliance.
 
 Import `from kip import *` and declare
 `report = run_document(__file__, title="...", prepare=cad.generate)` above the
-first marker (omit prepare without CAD). Page metadata can be passed here;
-layout.toml is optional. The first text cell wraps beneath the title automatically.
+first marker (omit prepare without CAD). All page settings go here (see Page
+layout). The first text cell wraps beneath the title automatically.
 Keep editable prose in doc.py, geometry in cad.py, computations in analysis.py.
 Do not generate doc.py with another Python script. Markers delimit Python blocks:
 
@@ -44,12 +46,33 @@ The last block is empty: it places the `loads` table built in the prelude.
 Use `# %% kind "Title" key=value`; the title supplies an id such as
 `"Bending moment"` -> `bending_moment`. Use `# %% kind id "Title"` for an id
 that survives retitling, or `# %% kind id` for an unlabelled cell. IDs must be
-unique. Old `# %% kip.calc id=bearing label="Bearing" result_unit=MPa` works.
-Blocks render in file order and execute in dependency order. Assign each result
-in one block; avoid hidden mutation between blocks. Units and math functions are
-bare names (`mm`, `kN`, `sqrt`), not dotted calls inside calculations. Name the
-unit a result is read in beside the equation, as `M = P * L    # -> kN*m`; avoid
-`.to()` in calc blocks (`unit=MPa` on the marker still works).
+unique. Kinds: text, inputs, calc, symbolic, controlled, verify, requirements,
+table, plot, draw, sources, packet. Older spellings (`kip.calc id=...`, `given`,
+`calculation`, `equations`, `drawing`, `references`, `unit=` on the marker)
+still work but warn; do not write them.
+
+Cells render in file order. Calculations (prelude, inputs, calc, symbolic,
+controlled, verify, requirements) run top to bottom first; tables, plots,
+drawings, sources and text run top to bottom after them, so prose and tables
+may show values computed further down. A calculation may not read a value that
+only a later calculation defines: that is an error before anything runs. A
+cell whose inputs failed is BLOCKED and names what it waits on; fix the first
+failure. Failures print the file:line in doc.py or analysis.py.
+
+Units and math functions are bare names (`mm`, `kN`, `sqrt`). The one-letter
+unit names (A F H J K L N V W g m s) are only units where a unit makes sense --
+after a number (`9.81 * m / s**2`) or passed to a call (`x.to(m)`). Using an
+undefined `H`, `L` or `g` as a variable is an error: define the variable.
+Name the unit a result is read in beside the equation, as
+`M = P * L    # -> kN*m`.
+
+A calc cell is rendered from its own Python: each assignment prints as
+symbolic = substituted = result. It may contain single-name assignments,
+arithmetic (+ - * / **), bare function calls (`sqrt(x)` keeps units), reads such
+as `C.rho_w` or `sizing.M`, `(expr).to(MPa)`, and `if`/`elif`/`else` (the
+condition and taken branch are shown). Anything else -- loops, indexing,
+`x if c else y`, `+=`, reassigning a name, method calls -- is refused with a
+hint; compute it in the prelude or before `# equations` in an @calculation.
 Put setup, imports and functions in the prelude. A rich-content block uses its
 last expression: `Table(...)`, `Sheet.load(...)`, `Drawing.load(...)`, `plot(...)`,
 or `Sources.load(...)`. Assign only when another cell needs the object. Existing
@@ -71,13 +94,12 @@ Use `kip new folder --template component` for a full component packet. One empty
 `# %% packet component` declaration supplies the standard section order, overview,
 input tables, nomenclature, requirements, references and final compliance matrix.
 It binds `C` and `reqs`; do not bind those names again. Put reusable calculations
-in analysis.py and call `analysis.size(C)` in a `calculation` cell.
+in analysis.py and call `analysis.size(C)` in a `calc` cell.
 
 Default stages are overview, requirements, inputs, preliminary, sizing, design, analysis,
 manufacturing, test, compliance. Drawings default to design; calculations, plots
 and tables to analysis; inputs/controlled cells to inputs; verify cells to
 compliance; prose to overview. Use `stage=sizing` etc. for placement exceptions.
-Inline `preliminary`, `sizing` and `analysis` markers are aliases for `calc` with that stage.
 Authored order is preserved within each stage. Use `section=2` for subsections.
 
 The component scaffold creates header-only workbooks; fill the existing headers:
@@ -86,9 +108,11 @@ The component scaffold creates header-only workbooks; fill the existing headers:
 - references.xlsx / Documents: description, organization, number.
 - process.xlsx / Inputs: id, operation, acceptance.
 - tests.xlsx / Inputs: id, requirement, procedure, criterion, result, evidence.
+- requirements.xlsx: Item (id, name, kind, revision, parent, parent_file,
+  description), Variables (name, value, unit, description, source) and Inputs
+  (id, text, verification, parent, controls, rationale, note).
 
-All live under input/. Requirements use requirements.toml, or alternatively
-input/requirements.xlsx / Inputs with id, text, verification. Never supply both.
+All live under input/. Never supply an older requirements.toml as well.
 Reference/Document sheets are optional supporting material. Missing files and
 valid header-only sheets show OPEN; unavailable inputs block dependent cells.
 Test result/evidence blanks stay OPEN. PRESENT never means verified. Compliance
@@ -112,8 +136,7 @@ The optional packet.toml is editable convention, not a fixed document structure:
 - Removed stages stop expecting their sheets. Move a sheet's stage to retain it.
   `enabled=false` disables a reader; disabling constants/requirements also frees
   C/reqs for custom setup. Unknown settings are errors, not silent fallbacks.
-- Top-level `requirements_file` changes the requirements TOML path;
-  `[sheets.requirements]` configures its workbook alternative.
+- `[sheets.requirements]` configures the requirements workbook.
 - `# %% packet component config="team.toml"` selects another configuration file.
   Input paths remain relative to doc.py. Build/watch reloads configuration edits.
 
@@ -123,13 +146,13 @@ multiline prose, the source line; generated expressions point to the cell.
 
 ### Individual content
 
-- `calculation`: call a function decorated with `@calculation` from analysis.py.
+- A `calc` cell whose only statement calls a function from analysis.py
+  (`sizing = analysis.size(C)`) renders that function's `@calculation`.
   Set up its inputs before `# equations` and write ordinary straight-line
   arithmetic after that marker, one `# -> unit` per result that needs a display
   unit. `return locals()` is optional. The function call is not printed; Kip
   renders the validated arithmetic and computed values. Access results as
-  attributes when the call is assigned. Use this kind for dotted calls; inline `calc` retains its stricter
-  syntax checks.
+  attributes when the call is assigned. The equations follow the calc grammar.
 - `Constants.load()` reads `input/constants.xlsx`, a `key`/`value` sheet whose
   optional `unit`, `description`, `basis`, `symbol` and `source` columns supply
   everything else. Lookups (`C.rho_w`, `C["rho_w"]`) are pint quantities, so
@@ -144,10 +167,10 @@ multiline prose, the source line; generated expressions point to the cell.
   with their existing headers; `.table(...)` selects columns or adds options.
   `hide=(...)` drops columns such as keys and URLs.
   `sheet.sources(title="supplier_item")` turns catalogue rows into citations.
-- References live in a workbook: `Sources.load("input/references.xlsx")`. Each
+- References live in input/references.xlsx; `Sources.load()` reads it. Each
   `Source` field reads the column of the same name (`key`, `title`, `author`,
   `publisher`, `year`, `section`, `url`, `note`); empty cells stay absent.
-  `Sources.load()` merges several files, including `[sources.key]` TOML tables.
+  `Sources.load(a, b)` merges several workbooks.
   Standards and specifications are not references -- put them on a `Documents`
   worksheet (document description, organization, number) and render it with
   `Sheet.load("input/references.xlsx", "Documents").table()`.
@@ -163,10 +186,10 @@ multiline prose, the source line; generated expressions point to the cell.
 - `Drawing.load(path)` supports SVG and PNG; `Drawing.grid([(label, drawing), ...])`
   composes views. Prefer these to project-specific XML/base64 wrappers.
 
-- `inputs` (alias `given`): quantities in compact outlined boxes.
+- `inputs`: quantities in compact outlined boxes.
 - `controlled`: assignments such as `P = reqs.P_design`, with provenance.
-- `calc`: numbered numeric working; `equations` (alias `symbolic`): SymPy
-  expressions assigned to names, rendered as numbered symbolic relations.
+- `calc`: numbered numeric working; `symbolic`: SymPy expressions assigned to
+  names, rendered as numbered symbolic relations.
 - `table`: `Table(["Case", "Load"], [("LC-1", 10*kN)])`, or
   `Table.from_records([{"Case": "LC-1", "Load": 10*kN}])`.
   Use `Column("load", "Load", unit="kN", precision=1)` for conversion/formatting.
@@ -190,32 +213,34 @@ multiline prose, the source line; generated expressions point to the cell.
   Chain `.line()`, `.scatter()`, `.bar()` for more series. Quantity arrays infer
   units; `xunit`/`yunit` override them. Labels are literal strings; use `Math(...)`
   or `Symbol(...)` for mathematical labels. `Figure(...)` gives full control.
-- `drawing` (alias `draw`): `drawing = Drawing(body="...CeTZ code...", width=80)`.
+- `draw`: `Drawing(body="...CeTZ code...", width=80)`.
   Background is off; marker `panel=true` adds a tight padded panel.
 - CAD: `from kip.cad import load_build123d, cad_view, cad_section, cad_face`.
   Use `bd = load_build123d()`, build a solid, then separate drawing blocks for
   `cad_view(solid, "iso")` (`top`, `side`, `front`, `bottom` also supported),
   `cad_section(solid, bd.Plane.XZ, dxf="section.dxf")`, or
   `cad_face(planar_face, dxf="face.dxf")`. The showcase is the worked example.
-- `references` (alias `sources`): `refs = Sources(book=Source(title="...",
+- `sources`: `Sources.load()`, or `Sources(book=Source(title="...",
   author="...", year=2026, url="..."))`, cited with `@src:book`.
-- Requirements: load `reqs = Requirements.load()` (`requirements.toml`) in the
-  prelude. Use `reqs.verify("REQ-001", MS, ">= 0", evidence="margin")` in the
+- Requirements: load `reqs = Requirements.load()` (input/requirements.xlsx) in
+  the prelude. `parent_file` on the Item row points at the parent item's
+  workbook, relative to this project folder, so its variables flow down. Use `reqs.verify("REQ-001", MS, ">= 0", evidence="margin")` in the
   same table block as `matrix = compliance_matrix(reqs)`. Use
   `variables_table(reqs)` for controlled symbols and `requirements_table(reqs)`
   for the requirement listing. Do not invent evidence or material allowables.
 
 ## Page layout
 
-Edit `[page]` in layout.toml: `title`, `subtitle`, `author`, `project`, `document`,
-`revision`, `date`, `checker`, `marking`, `grid_step` (mm), `frames` (opt-in section
-outlines), `section_numbering`, `columns` (1 or 2). Default layout flows automatically. First text
+Pass page settings to `run_document(__file__, ...)`: `title`, `subtitle`,
+`author`, `project`, `document`, `revision`, `date`, `checker`, `client`,
+`marking`, `header_left`, `header_right`, `footer_left`, `paper`, `margin`
+and `grid_step` (mm), `font_size`, `grid`, `frames` (opt-in section outlines),
+`section_numbering`, `columns` (1 or 2). layout.toml only holds block positions. Default layout flows automatically. First text
 block `wrap_title=true` wraps alongside the metadata box. Marker `columns=2`
 switches subsequent blocks to two columns; `columns=1` restores full width;
 `columns=default` restores the document default. Every packet section resets to
 its `[sections.id].columns` setting or the document default. For a two-column
-default, use `kip new folder --columns 2`, `[page] columns = 2`, or
-`run_document(__file__, columns=2)`. Local switches allow part of a section to
+default, use `kip new folder --columns 2` or `run_document(__file__, columns=2)`. Local switches allow part of a section to
 use another width. Calculations and plots adapt to narrow columns.
 Columns fill the left side first; `columnbreak=true` starts a cell in the next
 column. Use it for short blocks that should sit side by side. It requires
@@ -224,7 +249,7 @@ two-column flow and keeps the cell's heading with its content.
 subsection, 3 and beyond as deep as the document needs. Numbering, spacing and
 the PDF outline follow from it, so never type section numbers into a label.
 Use it on the text block that opens a section; a table's or figure's label stays
-a run-in caption. `section_numbering` in `[page]` sets the pattern ("1.1" by
+a run-in caption. `section_numbering` sets the pattern ("1.1" by
 default, "I.A" for roman/letter, "" to switch numbering off).
 
 `pagebreak=` forces a page boundary: `before` (or `true`) starts a block on a new

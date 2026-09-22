@@ -1,18 +1,9 @@
-r"""AST lint for handcalcs-rendered blocks.
+"""Static checks on calc and inputs cells, run before anything executes.
 
-This is a **correctness** pass, not style.  handcalcs
-renders several perfectly valid Python constructs *silently wrong* -- the
-document compiles, looks plausible, and states false mathematics:
-
-===========================  ==========================================
-``y = x if c else z``        renders ``y = x``; the condition vanishes
-``a, b = 3.0, 4.0``          renders ``a, b = 3.0, 4.0, 4.000 = ... = 3.000``
-``y = q.to(MPa)``            renders ``\mathrm{q.to} \mathrm{MPa}``
-``y = (expr).to(MPa)``       conversion silently dropped, or hard crash
-===========================  ==========================================
-
-Rejecting these is therefore mandatory.  Use ``result_unit=`` block metadata
-instead of ``.to()``.
+Calc cells are rendered from their own syntax, so they are held to the grammar
+:func:`kip.math.calc.check_calc` can display faithfully: assignments,
+arithmetic, bare function calls and if/else. Everything else is refused with a
+hint instead of being rendered as algebra the code did not perform.
 """
 
 from __future__ import annotations
@@ -53,81 +44,29 @@ class ValidationError(Exception):
         )
 
 
-_BANNED_STMTS = {
-    ast.For: ("loops", "handcalcs cannot render iteration; unroll it or compute in a prelude helper"),
-    ast.AsyncFor: ("loops", "handcalcs cannot render iteration"),
-    ast.While: ("loops", "handcalcs cannot render iteration"),
-    ast.FunctionDef: ("function definitions", "define helpers in the prelude, above the first block marker"),
-    ast.AsyncFunctionDef: ("function definitions", "define helpers in the prelude"),
-    ast.ClassDef: ("class definitions", "define classes in the prelude"),
-    ast.With: ("with statements", "not supported by handcalcs"),
-    ast.Try: ("try statements", "not supported by handcalcs"),
-}
-
-
 def validate_block(block: Block, path: str | Path = "doc.py") -> list[Diagnostic]:
-    """Return diagnostics for one block. Non-handcalcs blocks are not linted."""
+    """Return diagnostics for one block. Only calc and inputs cells are held to a grammar."""
     if not block.is_code or not block.source.strip():
         return []
 
     offset = block.body_start - 1
-    out: list[Diagnostic] = []
-
-    def err(node: ast.AST, msg: str, hint: str = "") -> None:
-        out.append(Diagnostic("error", block.id, offset + getattr(node, "lineno", 1), msg, hint))
-
-    def warn(node: ast.AST, msg: str, hint: str = "") -> None:
-        out.append(Diagnostic("warning", block.id, offset + getattr(node, "lineno", 1), msg, hint))
-
     try:
         tree = ast.parse(block.source)
     except SyntaxError as e:
         return [Diagnostic("error", block.id, offset + (e.lineno or 1),
                            f"syntax error: {e.msg}")]
 
-    if not block.uses_handcalcs:
+    if not block.renders_math:
         # prelude / symbolic / controlled / plot / table / draw / sources
-        # blocks are ordinary Python, not subject to handcalcs' constraints
-        return out
+        # blocks are ordinary Python
+        return []
 
-    for node in ast.walk(tree):
-        for cls, (what, hint) in _BANNED_STMTS.items():
-            if isinstance(node, cls):
-                err(node, f"{what} are not supported in a kip.{block.kind} block", hint)
-
-        if isinstance(node, ast.IfExp):
-            err(node,
-                "conditional expressions render INCORRECTLY (the condition is "
-                "silently dropped from the output)",
-                "use a real if/else statement, which handcalcs renders as "
-                "'Since, x > y ->'")
-
-        if isinstance(node, ast.Attribute):
-            err(node,
-                f"attribute access '.{node.attr}' renders incorrectly",
-                "use result_unit= on the block marker instead of .to(), and "
-                "import bare names in the prelude (from math import sqrt) "
-                "rather than calling math.sqrt")
-
-        if isinstance(node, ast.AugAssign):
-            err(node, "augmented assignment (+=, *=, ...) is not rendered",
-                "write the full expression: x = x + 1")
-
-        if isinstance(node, ast.Assign):
-            if len(node.targets) > 1:
-                err(node, "chained assignment (a = b = ...) is not rendered",
-                    "use one assignment per line")
-            for tgt in node.targets:
-                if isinstance(tgt, (ast.Tuple, ast.List)):
-                    err(tgt,
-                        "tuple/list unpacking renders INCORRECTLY "
-                        "(values and results are interleaved wrongly)",
-                        "assign each name on its own line")
-                elif isinstance(tgt, ast.Name) and tgt.id.endswith("_"):
-                    warn(tgt, f"name {tgt.id!r} renders with an empty subscript "
-                              f"('{tgt.id[:-1]}_{{}}')",
-                         "drop the trailing underscore")
-    return out
+    from ..math.calc import check_calc, is_external_call
+    if block.kind == "calc" and is_external_call(tree):
+        return []  # an @calculation validates its own equations
+    return [Diagnostic("error", block.id, offset + getattr(node, "lineno", 1),
+                       f"{message} in a {block.kind} cell", hint)
+            for node, message, hint in check_calc(tree)]
 
 
 def validate_all(blocks: list[Block], path: str | Path = "doc.py") -> list[Diagnostic]:
@@ -142,3 +81,129 @@ def raise_for_errors(diags: list[Diagnostic], path: str | Path = "doc.py") -> No
     errors = [d for d in diags if d.severity == "error"]
     if errors:
         raise ValidationError(errors, path)
+
+
+# -- unit names read as variables ------------------------------------------------
+
+def ambiguous_units() -> frozenset[str]:
+    """Unit names that are also everyday engineering variables: A, F, H, L, g, m, s, ..."""
+    from ..units import UNIT_NAMES
+    return frozenset(name for name in UNIT_NAMES if len(name) == 1)
+
+
+def _bound_anywhere(tree: ast.AST) -> set[str]:
+    """Every name a cell binds, including function parameters and loop targets."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+            names.add(node.id)
+        elif isinstance(node, ast.arg):
+            names.add(node.arg)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.alias):
+            names.add((node.asname or node.name).split(".")[0])
+    return names
+
+
+def unit_misuse(tree: ast.AST, candidates: frozenset[str] | set[str],
+                units: frozenset[str] | None = None) -> list[ast.Name]:
+    """Reads of unit names that are not in a unit position.
+
+    ``L`` is a litre, so ``P / (b * L)`` with no ``L`` defined silently
+    divides by a volume. A unit name is accepted where only a unit makes
+    sense: after a number (``2 * m``, ``9.81 * m / s**2``) or a loop variable
+    (``[p * N for p in loads]``), inside a unit expression written that way
+    (``kg / m**3``), or passed to a call (``x.to(m)``, ``Q(3, m)``). Anywhere else it is almost certainly a
+    variable the author forgot to define.
+    """
+    if not candidates:
+        return []
+    units = _unit_names() if units is None else units
+    # `[p * N for p in loads]`: a loop variable times a unit gives the list its units.
+    counters = {n.id for node in ast.walk(tree)
+                if isinstance(node, (ast.comprehension, ast.For))
+                for n in ast.walk(node.target) if isinstance(n, ast.Name)}
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+
+    def is_unit(node) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in candidates or node.id in units
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            return is_unit(node.left) and _is_number(node.right)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
+            return is_unit(node.left) and is_unit(node.right)
+        return False
+
+    def is_quantity(node) -> bool:
+        """A number, or a number followed by units: 2, 9.81 * m / s**2."""
+        if _is_number(node):
+            return True
+        return (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div))
+                and is_quantity(node.left) and is_unit(node.right))
+
+    def accepted(node) -> bool:
+        top = node
+        while top in parents and is_unit(parents[top]):
+            top = parents[top]
+        parent = parents.get(top)
+        if isinstance(parent, ast.BinOp) and isinstance(parent.op, (ast.Mult, ast.Div)):
+            left = parent.left
+            return parent.right is top and (
+                is_quantity(left) or (isinstance(left, ast.Name) and left.id in counters))
+        if isinstance(parent, (ast.Call, ast.keyword)):
+            return getattr(parent, "func", None) is not top
+        if isinstance(parent, (ast.Assign, ast.AnnAssign)):
+            return True  # an alias: unit = m
+        return False
+
+    return [node for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+            and node.id in candidates and not accepted(node)]
+
+
+def _is_number(node) -> bool:
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        node = node.operand
+    return isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+        and not isinstance(node.value, bool)
+
+
+def _unit_names() -> frozenset[str]:
+    from ..units import UNIT_NAMES
+    return frozenset(UNIT_NAMES)
+
+
+def misuse_message(name: str) -> tuple[str, str]:
+    from ..units import UNIT_NAMES
+    unit = UNIT_NAMES[name]
+    return (f"{name!r} is not defined here, so it means the unit {unit} "
+            f"({name} is a kip unit name)",
+            f"define {name} before this cell, or use it as a unit: after a "
+            f"number (2 * {name}) or in a call (.to({name}))")
+
+
+def unit_diagnostics(blocks: list[Block]) -> list[Diagnostic]:
+    """Unit names read as variables anywhere in the document."""
+    defined: set[str] = set()
+    trees = {}
+    for b in blocks:
+        if not b.is_code or not b.source.strip():
+            continue
+        try:
+            trees[b.id] = ast.parse(b.source)
+        except SyntaxError:
+            continue
+        defined |= _bound_anywhere(trees[b.id])
+    candidates = ambiguous_units() - defined
+    out: list[Diagnostic] = []
+    for b in blocks:
+        if b.id not in trees:
+            continue
+        for node in unit_misuse(trees[b.id], candidates):
+            message, hint = misuse_message(node.id)
+            out.append(Diagnostic("error", b.id, b.body_start - 1 + node.lineno, message, hint))
+    return out

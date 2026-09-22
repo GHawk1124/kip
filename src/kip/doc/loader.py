@@ -37,6 +37,18 @@ class KipSyntaxError(SyntaxError):
         return f"{self.path}:{self.lineno}: {self.args[0]}"
 
 
+#: Canonical marker names that differ from the kernel's internal kind names.
+_INTERNAL = {"inputs": "given", "equations": "symbolic", "drawing": "draw",
+             "references": "sources", "calculation": "calc"}
+_CANONICAL = {"given": "inputs", "calculation": "calc"}
+#: Kinds as they are written on a marker.
+_KIND_NAMES = ("text", "inputs", "calc", "symbolic", "controlled", "verify",
+               "requirements", "table", "plot", "draw", "sources", "packet")
+#: Older spellings, and what to write instead.
+_RENAMED = {"given": "inputs", "calculation": "calc", "equations": "symbolic",
+            "drawing": "draw", "references": "sources"}
+
+
 def _parse_meta(raw: str) -> dict[str, str]:
     meta: dict[str, str] = {}
     for m in _META_RE.finditer(raw):
@@ -90,19 +102,28 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                     raise ValueError('expected: kind id "Label" key=value')
             except ValueError as e:
                 raise KipSyntaxError(str(e), path, i + 1) from e
-        kind = {"inputs": "given", "equations": "symbolic",
-                "drawing": "draw", "references": "sources"}.get(kind, kind)
+        notes: list[str] = []
+        if m.group("legacy"):
+            notes.append(f'"# %% kip.{kind} id=..." is an older marker form; '
+                         f'write # %% {_CANONICAL.get(kind, kind)} <id> "Label"')
+        if kind in _RENAMED:
+            notes.append(f"'{kind}' cells are now written '{_RENAMED[kind]}'")
         if kind in ("preliminary", "sizing", "analysis"):
+            notes.append(f'"# %% {kind}" is shorthand for a calc cell; '
+                         f'write # %% calc "..." stage={kind}')
             meta.setdefault("stage", kind)
             kind = "calc"
+        kind = _INTERNAL.get(kind, kind)
+        if "unit" in meta or "result_unit" in meta:
+            notes.append("unit=/result_unit= on the marker is an older form; write the "
+                         "unit beside the assignment: x = ...  # -> MPa")
         if "unit" in meta:
             if "result_unit" in meta:
                 raise KipSyntaxError("use unit= or result_unit=, not both", path, i + 1)
             meta["result_unit"] = meta.pop("unit")
         if kind not in KINDS or kind == "prelude":
             raise KipSyntaxError(
-                f"unknown block kind 'kip.{kind}'; expected one of "
-                + ", ".join(f"kip.{k}" for k in KINDS if k != "prelude"),
+                f"unknown cell kind {kind!r}; expected one of " + ", ".join(_KIND_NAMES),
                 path, i + 1,
             )
         if "id" not in meta and meta.get("label"):
@@ -116,7 +137,7 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                 "(letters, digits, underscore; not starting with a digit)",
                 path, i + 1,
             )
-        marks.append((i, kind, meta))
+        marks.append((i, kind, meta, notes))
 
     blocks: list[Block] = []
     seen: dict[str, int] = {}
@@ -129,7 +150,7 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
                   marker_line=0, body_start=1, body_end=first)
         )
 
-    for n, (idx, kind, meta) in enumerate(marks):
+    for n, (idx, kind, meta, notes) in enumerate(marks):
         end = marks[n + 1][0] if n + 1 < len(marks) else len(lines)
         bid = meta.pop("id")
         if bid in seen:
@@ -144,7 +165,7 @@ def parse(text: str, path: str | Path | None = None) -> list[Block]:
             Block(id=bid, kind=kind, source=source, marker_line=idx + 1,
                   body_start=idx + 2,
                   body_end=idx + 1 + max(len(source.splitlines()), 1),
-                  meta=meta)
+                  meta=meta, notes=notes)
         )
     return blocks
 

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from ..content import Drawing, Figure, Source, Sources, Table, Symbol, Math
 from ..doc.kernel import BlockResult, Document
-from ..math.handcalc_bridge import MITEX_VERSION
 from ..units import fmt_quantity
 from .layout import Layout
 from ..prose import headings, literal, quote, transform
@@ -56,19 +55,22 @@ def _raw_block(body: str) -> str:
     return f"{fence * 3}\n{body}\n{fence * 3}"
 
 
-def _mitex(latex: str) -> str:
-    # handcalcs owns the algebra; kip owns the baseline pitch. Its outer
-    # aligned environment adds unrelated padding and row spacing.
-    body = latex.strip()
-    if body.startswith(r"\begin{aligned}") and body.endswith(r"\end{aligned}"):
-        body = body[len(r"\begin{aligned}"):-len(r"\end{aligned}")]
-        rows = re.split(r"\\\\(?:\[[^\]]*\])?", body)
-    else:
-        rows = [body]
-    return "\n".join(
-        f"#grid-math(math.display(mitex({_raw_block(row.strip())}, block: false)))"
-        for row in rows if row.strip()
-    )
+def _math_rows(rows) -> str:
+    """One numbered, grid-snapped display equation per row of Typst math.
+
+    A row may itself be a list: the rows of one stacked equation, which share
+    a single number.
+    """
+    out = []
+    for row in rows:
+        if isinstance(row, str):
+            if row.strip():
+                out.append(f"#grid-math($display({row})$)")
+            continue
+        for i, part in enumerate(row):
+            options = "" if len(row) == 1 else (", stacked: true" + (", numbered: false" if i else ""))
+            out.append(f"#grid-math($display({part})${options})")
+    return "\n".join(out)
 
 # prose
 
@@ -301,7 +303,7 @@ def _result_chip(block, result: BlockResult) -> str:
     """Spreadsheet-style output marker showing the block's final value."""
     if block.kind not in ("calc", "calculation"):
         return "none"
-    from ..math.handcalc_bridge import last_assigned_names
+    from ..math.calc import last_assigned_names
     from ..math.printer import render_name
 
     calculation = result.calculation
@@ -317,15 +319,14 @@ def _result_chip(block, result: BlockResult) -> str:
     return f"result-chip(${render_name(name)}$, {_s(value)})"
 
 
-#: Below this rendered width (mm) a calc is stacked rather than laid out in
-#: handcalcs' three-column form, which needs room it does not have in a column.
+#: Below this rendered width (mm) each step of a calc goes on its own line
+#: rather than running across, which needs room a column does not have.
 NARROW_MM = 120.0
 
 
-def _calc_latex(result: BlockResult, width_mm: float | None) -> str:
-    if width_mm is not None and width_mm < NARROW_MM and result.latex_long:
-        return result.latex_long
-    return result.latex or ""
+def _calc_rows(result: BlockResult, width_mm: float | None) -> list[str]:
+    narrow = width_mm is not None and width_mm < NARROW_MM
+    return [eq.stacked() if narrow else eq.wide() for eq in result.equations]
 
 
 def _section_heading(block) -> str:
@@ -377,7 +378,7 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
 
     if kind == "given":
         from ..math.printer import render_name
-        from ..math.handcalc_bridge import last_assigned_names
+        from ..math.calc import last_assigned_names
         rows = ", ".join(
             f"(name: [${render_name(name)}$], value: {_s(fmt_quantity(value, block.precision))})"
             for name in last_assigned_names(block.source)
@@ -387,9 +388,9 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
         return f"#kip-given(id: {bid}, label: {lbl}, rows: ({rows},))" if rows else ""
 
     if kind == "calc":
-        if not result.latex:
+        if not result.equations:
             return ""
-        body = _mitex(_calc_latex(result, width_mm))
+        body = _math_rows(_calc_rows(result, width_mm))
         return (f"#kip-calc(id: {bid}, label: {lbl}, "
                 f"chip: {_result_chip(block, result)})[\n{body}\n]")
 
@@ -430,8 +431,7 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
     if kind == "symbolic":
         if not result.typst:
             return ""
-        rows = "\n".join(f"#grid-math(math.display[${row}$])"
-                         for row in result.typst.split("\\\n") if row.strip())
+        rows = _math_rows(result.typst.split("\\\n"))
         return f"#kip-symbolic(id: {bid}, label: {lbl})[\n{rows}\n]"
 
     if kind == "plot" and isinstance(result.content, Figure):
@@ -664,11 +664,9 @@ def emit(doc: Document, layout: Layout | None = None,
         layout = replace(layout, page=replace(layout.page, **reports[0].page))
     page = layout.page
 
-    if doc.packet is not None and doc.packet.identity is not None:
-        item = doc.packet.identity
-        page = replace(page, title=page.title or item.name or item.id,
-                       document=page.document or item.id, revision=page.revision or item.revision)
-        layout = replace(layout, page=page)
+    for extension in doc.extensions:
+        page = extension.page(page)
+    layout = replace(layout, page=page)
 
     tf = page.title_fields()
     fields = ("(" + ", ".join(f"({_s(k)}, {_s(v)})" for k, v in tf) + ",)"
@@ -700,7 +698,6 @@ def emit(doc: Document, layout: Layout | None = None,
                      f"body: [{content}])")
 
     preamble = "\n".join([
-        f'#import "@preview/mitex:{MITEX_VERSION}": *',
         f'#import "@preview/lilaq:{LILAQ_VERSION}" as lq',
         f'#import "@preview/cetz:{CETZ_VERSION}"',
         '#import "kip.typ": *',

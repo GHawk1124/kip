@@ -11,8 +11,9 @@ uv run doc.py
 ```
 
 Edit `doc.py` directly. Put CAD in `cad.py` and optional reusable computations in
-`analysis.py`. `run_document` supplies standard headers and title wrapping;
-`layout.toml` is optional. Inputs and references are workbooks under `input/`. Output goes in `output/`.
+`analysis.py`. `run_document(...)` holds the title, running head and every other
+page setting. Inputs, requirements and references are workbooks under `input/`.
+Output goes in `output/`.
 
 - `kip new name --template requirements` starts a requirements document.
 - `kip new name --template component` starts an engineering packet with standard sheets and visible gaps.
@@ -21,6 +22,7 @@ Edit `doc.py` directly. Put CAD in `cad.py` and optional reusable computations i
 - `uv run kip check --render` also compiles Typst without writing PDF or spreadsheet exports.
 - `uv run kip watch` rebuilds on changes.
 - `kip skill` prints the LLM authoring guide, also included in new projects.
+- `kip migrate` converts an older project's `requirements.toml` and `sources.toml` into `input/` workbooks.
 
 ```python
 from kip import *
@@ -53,7 +55,7 @@ Then a document cell is just:
 
 ```python
 # Import analysis in the document prelude.
-# %% calculation "Bending moment"
+# %% calc "Bending moment"
 analysis.moment(2 * kN, 100 * mm)
 ```
 
@@ -63,6 +65,57 @@ rendered with substitutions and units, each result read in the unit its own
 cell needs `result.M`.
 Use `prepare=cad.generate` in `run_document(...)` to regenerate CAD before a direct
 script build. CLI `kip build` and `kip check` consume the existing CAD assets.
+
+## Calculations
+
+A calc cell is plain Python, and it is rendered from that Python: every
+assignment prints as its symbolic form, the same with values substituted, and
+the result, in the unit named by its `# -> unit` comment.
+
+```python
+# %% calc stress "Bending stress"
+Z = b * h**2 / 6
+sigma = M / Z          # -> MPa
+r = sqrt(A / pi)       # sqrt keeps units: mm
+if sigma > sigma_allow:
+    governs = 1
+else:
+    governs = 0
+```
+
+A calc cell may hold single-name assignments, `+ - * / **`, bare function calls
+(`sqrt`, `sin`, `exp`, `log`, `min`, `max`, `abs`, or your own), reads such as
+`C.rho_w` or `sizing.M`, `(expr).to(MPa)`, and `if`/`elif`/`else`, which shows
+the condition, its values and the branch taken. Anything else -- loops,
+indexing, `x if c else y`, `+=`, method calls, assigning a name twice -- is
+refused before the document runs, with a hint, rather than rendered as algebra
+the code did not perform. Do that work in the prelude or before `# equations`.
+
+## How a document runs
+
+Calculations (the prelude, `inputs`, `calc`, `symbolic`, `controlled`, `verify`
+and `requirements` cells) run top to bottom. Tables, plots, drawings, sources
+and text then run top to bottom, so the opening text, the nomenclature and a
+summary table can all show values computed further down. A calculation that
+reads a value only a later calculation defines is an error before anything
+runs, naming both cells.
+
+When a cell fails, the cells that depend on it are marked BLOCKED ("Waiting on
+bending, which failed.") instead of failing with confusing NameErrors, and
+`kip check` prints the `file:line` where the failure happened -- in `doc.py`
+or in your `analysis.py`.
+
+The one-letter unit names `A F H J K L N V W g m s` are units only where a unit
+makes sense: after a number (`9.81 * m / s**2`) or passed to a call
+(`x.to(m)`). Using an undefined `H`, `L` or `g` as a variable is an error,
+because it would otherwise silently divide by a henry or a litre.
+
+Cell kinds are `text`, `inputs`, `calc`, `symbolic`, `controlled`, `verify`,
+`requirements`, `table`, `plot`, `draw`, `sources` and `packet`. Older spellings
+still work and print a warning saying what to write instead: `# %% kip.calc
+id=...`, `given`, `calculation`, `equations`, `drawing`, `references`, the
+`preliminary`/`sizing`/`analysis` shorthands, and `unit=`/`result_unit=` on
+the marker.
 
 ## Component packets
 
@@ -80,13 +133,13 @@ report = run_document(__file__, title="Bracket")
 # %% text "Design intent"
 """Minimize bracket mass within the available mounting envelope."""
 
-# %% calculation "Initial sizing" stage=sizing
+# %% calc "Initial sizing" stage=sizing
 sizing = analysis.size(C)
 
 # %% draw "Front view"
 Drawing.load("assets/front.svg")
 
-# %% calculation "Strength check"
+# %% calc "Strength check"
 strength = analysis.strength(C)
 ```
 
@@ -94,8 +147,7 @@ The default order is **Overview, Requirements, Inputs, Preliminary Analysis,
 Sizing, Design, Analysis, Manufacturing, Test, Compliance**. Authored cells retain their order
 inside a section. Drawings default to Design, calculations/plots/tables to
 Analysis, inputs to Inputs, and verification to Compliance. Use `stage=...` for
-exceptions. `# %% preliminary "..."`, `# %% sizing "..."` and `# %% analysis "..."` are inline calculation
-shorthands; decorated calls use `calculation` with `stage=sizing` when needed.
+exceptions.
 
 The overview, input tables, nomenclature, requirement listing and compliance
 matrix are generated. `kip new --template component` creates blank starter
@@ -108,11 +160,14 @@ workbooks with these exact headers:
 | `input/references.xlsx` / Documents | description, organization, number | all three |
 | `input/process.xlsx` / Inputs | id, operation, acceptance | all three |
 | `input/tests.xlsx` / Inputs | id, requirement, procedure, criterion, result, evidence | first four; result/evidence may remain blank |
+| `input/requirements.xlsx` / Item | id, name, kind, revision, parent, parent_file, description | id; one row, optional (the id defaults to the folder name) |
+| `input/requirements.xlsx` / Variables | name, value, unit, description, source | name, value; optional |
+| `input/requirements.xlsx` / Inputs | id, text, verification, parent, controls, rationale, note | id, text; `controls` lists variable names separated by commas |
 
-Requirements use `requirements.toml` with the existing `[item]`, `[vars]` and
-`[req]` structure. Alternatively, supply `input/requirements.xlsx` / Inputs with
-`id`, `text`, `verification`; its item id defaults to the project folder name.
-Choose one requirements source. Reference and applicable-document sheets are
+`parent_file` points at the parent item's requirements workbook, relative to
+this project folder (`../skid/input/requirements.xlsx`), so its controlled
+variables flow down. An older `requirements.toml` still loads with a warning;
+never supply both. Reference and applicable-document sheets are
 optional supporting material; all other non-excluded sections must be present
 for `kip check` to succeed.
 
@@ -182,14 +237,12 @@ Each sheet accepts `path`, `sheet` (defaults to `"Inputs"` for new sheets),
 need `path`, `columns`, and `stage`. Built-in readers retain essential field names
 such as constants' `key` and `value`. `enabled=false` removes that reader and its
 expectations; disabling constants or requirements also releases `C` or `reqs`
-for your own setup. Top-level `requirements_file` changes the TOML path;
-`[sheets.requirements]` changes the workbook alternative. Paths are relative to
+for your own setup. `[sheets.requirements]` changes the requirements workbook. Paths are relative to
 `doc.py`. To reuse another settings file, use `# %% packet component config="team.toml"`.
 
 ### One or two columns
 
-Start with `kip new bracket --template component --columns 2`, set
-`columns = 2` under `[page]` in `layout.toml`, or use
+Start with `kip new bracket --template component --columns 2`, or use
 `run_document(__file__, columns=2)`. A section's `columns` setting overrides that
 default. For only part of a section, switch at cell boundaries:
 
@@ -295,11 +348,10 @@ views with `Drawing.load(...)`, and compose labeled views with `Drawing.grid(...
 All file loaders resolve relative to the document, including builds from another
 working directory. Mass-flow symbols such as `mdot_n` render with an overdot.
 
-`Sources.load("input/references.xlsx")` reads a references workbook whose
-columns are the reference fields -- `key`, `title`, `author`, `publisher`,
-`year`, `section`, `url`, `note`. Bind it in a `sources` cell and cite it with
-`@src:key`. `[sources.key]` tables in a `sources.toml` still load, and several
-files merge in one call.
+`Sources.load()` reads `input/references.xlsx`, whose columns are the
+reference fields -- `key`, `title`, `author`, `publisher`, `year`, `section`,
+`url`, `note`. Put it in a `sources` cell and cite with `@src:key`. Several
+workbooks merge in one call: `Sources.load(a, b)`.
 
 Sections number themselves. `section=N` makes a block's label a heading at that
 depth -- 1 a section, 2 a subsection, and as deep as you like:
@@ -311,7 +363,7 @@ depth -- 1 a section, 2 a subsection, and as deep as you like:
 
 The numbers, the spacing and the PDF outline come from the structure, so no
 number is ever typed into a label and none goes stale when a section moves.
-`section_numbering` in `[page]` sets the pattern; `""` turns numbering off.
+`run_document(..., section_numbering="I.A")` sets the pattern; `""` turns numbering off.
 
 Standards and specifications are applicable documents, not references: put them
 on a `Documents` worksheet with a description, an organization and a number, and
@@ -319,7 +371,7 @@ render it with `Sheet.load("input/references.xlsx", "Documents").table()`.
 
 Generated workbooks carry no creator, timestamps or tool identity, so
 regenerating an unchanged input produces identical bytes. The first text cell
-wraps beneath the title by default; `wrap_title=false` opts out. Existing inline
-calculations, `Sources(...)` objects and layout files remain supported.
+wraps beneath the title by default; `wrap_title=false` opts out. `layout.toml`
+holds only freeform block positions written by `kip layout --auto`.
 
 Development: `uv sync --extra cad`, `uv run pytest`, `uv build`.

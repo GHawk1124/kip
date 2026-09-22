@@ -32,8 +32,16 @@ def dependency(source: str | None = None, *, cad: bool = False) -> str:
 def create_project(root: Path, *, title: str | None = None,
                    template: str = "basic", source: str | None = None,
                    columns: int | None = None) -> list[Path]:
-    """Populate an empty directory. Never overwrite an existing project."""
-    from .render.layout import Layout, PageSpec
+    """Populate an empty directory. Never overwrite an existing project.
+
+    Templates keep their inputs as readable TOML in kip's source tree; a new
+    project receives them as the workbooks under ``input/`` that kip reads,
+    and its page settings in ``run_document(...)`` at the top of doc.py.
+    """
+    import tomllib
+
+    from .migrate import references_workbook, requirements_workbook
+    from .render.layout import PageSpec
 
     if columns is not None:
         PageSpec(columns=columns)  # Validate before writing any files.
@@ -48,15 +56,23 @@ def create_project(root: Path, *, title: str | None = None,
     requirement = dependency(source, cad=template == "showcase")
     root.mkdir(parents=True, exist_ok=True)
     for file in (TEMPLATES / template).iterdir():
-        if file.is_file():
+        if not file.is_file():
+            continue
+        if file.name == "requirements.toml":
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+            if template == "component":
+                data["item"].update(id=slug.upper(), name=doc_title)
+            requirements_workbook(data, root / "input" / "requirements.xlsx")
+        elif file.name == "sources.toml":
+            data = tomllib.loads(file.read_text(encoding="utf-8"))
+            references_workbook(data.get("sources", {}), root / "input" / "references.xlsx")
+        else:
             shutil.copyfile(file, root / file.name)
     if template == "component":
         from .packet import create_inputs
         create_inputs(root)
-        requirements_path = root / "requirements.toml"
-        requirements = tomlkit.parse(requirements_path.read_text(encoding="utf-8"))
-        requirements["item"].update(id=slug.upper(), name=doc_title)
-        requirements_path.write_text(tomlkit.dumps(requirements), encoding="utf-8")
+    _page_settings(root / "doc.py", title=doc_title if title or template != "showcase" else None,
+                   columns=columns)
     pyproject = tomlkit.document()
     pyproject["project"] = {"name": slug, "version": "0.1.0",
                             "description": doc_title, "requires-python": ">=3.12",
@@ -65,13 +81,21 @@ def create_project(root: Path, *, title: str | None = None,
     (root / "pyproject.toml").write_text(tomlkit.dumps(pyproject), encoding="utf-8")
     (root / ".python-version").write_text("3.12\n", encoding="utf-8")
     (root / ".gitignore").write_text(".venv/\n__pycache__/\noutput/\n", encoding="utf-8")
-    lp = root / "layout.toml"
-    layout = Layout.load(lp) if lp.exists() else Layout(page=PageSpec())
-    layout.page.title = doc_title
-    if columns is not None:
-        layout.page.columns = columns
-    layout.save(lp)
     skill = root / ".agents" / "skills" / "kip-authoring" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_bytes(SKILL.read_bytes())
     return sorted(p for p in root.rglob("*") if p.is_file())
+
+
+def _page_settings(doc: Path, *, title: str | None, columns: int | None) -> None:
+    """Put the title (and a column default) into the template's run_document call."""
+    text = doc.read_text(encoding="utf-8")
+    call = "run_document(__file__"
+    if call not in text:
+        return
+    extra = ""
+    if title is not None:
+        extra += f", title={json.dumps(title, ensure_ascii=False)}"
+    if columns is not None:
+        extra += f", columns={columns}"
+    doc.write_text(text.replace(call, call + extra, 1), encoding="utf-8")

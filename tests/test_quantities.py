@@ -82,7 +82,7 @@ source="REQ-1"
     assert nomenclature(reqs).rows[0][1:] == ("Required load", "kN")
 
 
-def test_document_nomenclature_can_precede_values_and_refresh_cached_results():
+def test_document_nomenclature_can_precede_values_and_refreshes_on_rebuild():
     source = '''from kip import *
 # %% table "Nomenclature"
 nomenclature()
@@ -100,7 +100,7 @@ M = P * L  # -> kN*m
     old = doc.results
     fresh = build(source=source.replace("# Applied load", "# Revised load"))
     fresh.namespace = {}
-    execute(fresh, previous=old)
+    execute(fresh)
     assert fresh.results["nomenclature"].content.rows[0][1] == "Revised load"
     assert doc.results["nomenclature"].content.rows[0][1] == "Applied load"
 

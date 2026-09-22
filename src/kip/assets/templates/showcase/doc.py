@@ -1,11 +1,26 @@
-"""Feature showcase -- exercises every kip block kind and page feature.
+"""Feature showcase -- exercises every kip cell kind and page feature.
 
-Blocks execute in dependency order, not document order.
+Calculations run top to bottom; tables, plots, drawings and text run after
+them, so the scope text and nomenclature can show results computed below.
 """
 
 from kip import *
 
-report = run_document(__file__)
+report = run_document(
+    __file__,
+    title="Lift Lug Stress Analysis",
+    subtitle="Single-plate lug for pressure-vessel skid, 18 kN static lift",
+    margin=16,
+    font_size=9.5,
+    marking="CIPS Proprietary",
+    project="SKID-4471",
+    document="CALC-0112",
+    client="Northline Process",
+    author="G. Comes",
+    checker="A. Ruiz",
+    revision="B",
+    date="2026-09-13",
+)
 import sympy as sp
 reqs = Requirements.load()
 
@@ -95,7 +110,7 @@ sigma_net = P_s / ((w_s - d_s) * t_s)
 P_lift = reqs.P_design
 DF = reqs.DF_min
 
-# %% given geom "Lug geometry"
+# %% inputs geom "Lug geometry"
 d_pin = 32 * mm
 t_plate = 16 * mm
 w_lug = 90 * mm
@@ -104,19 +119,19 @@ w_lug = 90 * mm
 sigma_y = reqs.sigma_y_min
 FS = reqs.FS_yield
 
-# %% calc design_load "Factored design load" unit=kN
-P_d = P_lift * DF
+# %% calc design_load "Factored design load"
+P_d = P_lift * DF  # -> kN
 
-# %% calc bearing "Bearing stress at pin" unit=MPa
+# %% calc bearing "Bearing stress at pin"
 A_br = d_pin * t_plate
-sigma_br = P_d / A_br
+sigma_br = P_d / A_br  # -> MPa
 
-# %% calc netsection "Net section tension" unit=MPa
+# %% calc netsection "Net section tension"
 A_net = (w_lug - d_pin) * t_plate
-sigma_nt = P_d / A_net
+sigma_nt = P_d / A_net  # -> MPa
 
-# %% calc allowable "Allowable stress" unit=MPa
-sigma_allow = sigma_y / FS
+# %% calc allowable "Allowable stress"
+sigma_allow = sigma_y / FS  # -> MPa
 
 # %% calc margin "Margin of safety (governing mode)"
 MS = sigma_allow / sigma_br - 1

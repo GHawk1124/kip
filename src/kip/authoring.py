@@ -8,11 +8,7 @@ import inspect
 from pathlib import Path
 import textwrap
 
-
-def project_path(path):
-    from .req import model
-    p = Path(path)
-    return p if p.is_absolute() else (model._DOC_DIR or Path.cwd()) / p
+from .doc.context import project_path  # re-exported: loaders resolve paths here
 
 
 def read_records(path, sheet="Inputs"):
@@ -110,7 +106,22 @@ def _equation_source(fn):
                 f"{fn.__name__}: a calculation returns nothing, or returns locals()")
     start = marker + 1 if marker is not None else function.body[0].lineno - 1
     end = function.body[-1].lineno - 1 if returns else len(lines)
-    return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns
+    return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns, start
+
+
+def _unit_misuse(fn, tree, first_line, path):
+    """``H`` with no ``H`` defined is a henry, not a height: report it."""
+    from .doc.validate import (Diagnostic, _bound_anywhere, ambiguous_units,
+                               misuse_message, unit_misuse)
+    from .units import ureg
+    bound = _bound_anywhere(tree)
+    candidates = {name for name in ambiguous_units() - bound
+                  if isinstance(fn.__globals__.get(name), ureg.Unit)}
+    out = []
+    for node in unit_misuse(tree, candidates):
+        message, hint = misuse_message(node.id)
+        out.append(Diagnostic("error", fn.__name__, first_line - 1 + node.lineno, message, hint))
+    return out
 
 
 def calculation(fn=None, *, units=None, precision=3):
@@ -134,8 +145,10 @@ def calculation(fn=None, *, units=None, precision=3):
     remains as an override for a unit that cannot be written as a comment.
     """
     def decorate(fn):
-        from .math.handcalc_bridge import display_units
-        tree, function, raw, returns = _equation_source(fn)
+        from .math.calc import display_units
+        tree, function, raw, returns, start = _equation_source(fn)
+        # Line numbers are reported against the author's file, not the snippet.
+        first_line = inspect.getsourcelines(fn)[1]
         full_source = textwrap.dedent(inspect.getsource(fn))
         signature = inspect.signature(fn)
         equations, annotated = display_units(raw)
@@ -144,20 +157,29 @@ def calculation(fn=None, *, units=None, precision=3):
         from .doc.blocks import Block
         from .doc.validate import validate_all, ValidationError
         path = inspect.getsourcefile(fn)
-        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=0,
-                      body_start=1, body_end=len(equations.splitlines()))
+        body_start = first_line + start
+        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=body_start - 1,
+                      body_start=body_start,
+                      body_end=body_start + len(equations.splitlines()) - 1)
         errors = [d for d in validate_all([block], path) if d.severity == "error"]
+        errors += _unit_misuse(fn, tree, first_line, path)
         if errors:
             raise ValidationError(errors, path)
 
         inner = fn
-        if not returns:
-            # Rewriting the tail is what lets the author stop writing it.
+        if not returns or annotated:
+            # Rewriting the tail is what lets the author stop writing it, and
+            # each annotated result is converted before the next line uses it.
+            from .math.calc import with_conversions
             function.decorator_list = []
+            if returns:
+                function.body.pop()
+            with_conversions(function.body, annotated)
             function.body.append(ast.Return(ast.Call(
                 func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[])))
             module = ast.fix_missing_locations(
                 ast.Module(body=[function], type_ignores=[]))
+            ast.increment_lineno(module, first_line - 1)
             scope: dict = {}
             exec(compile(module, path or "<calculation>", "exec"),
                  fn.__globals__, scope)

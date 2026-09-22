@@ -1,10 +1,9 @@
-"""Shared units and bare math names for handcalcs-compatible expressions."""
+"""Shared units and the bare math names calc cells render as operators."""
 
 from __future__ import annotations
 
 import math
 
-import handcalcs
 import pint
 
 __all__ = ["ureg", "Q", "UNIT_NAMES", "MATH_NAMES", "namespace", "fmt_quantity",
@@ -13,14 +12,6 @@ __all__ = ["ureg", "Q", "UNIT_NAMES", "MATH_NAMES", "namespace", "fmt_quantity",
 #: One registry for the whole process so quantities compose across blocks.
 ureg = pint.UnitRegistry(autoconvert_offset_to_baseunit=True)
 Q = ureg.Quantity
-
-# handcalcs defaults to pint's *long* LaTeX format ("\mathrm{millimeter}").
-# "~L" is the abbreviated form ("\mathrm{mm}").
-handcalcs.set_option("preferred_string_formatter", "~L")
-# One input per line; handcalcs' default of 3 columns runs values together when
-# rendered through mitex.
-handcalcs.set_option("param_columns", 1)
-handcalcs.set_option("custom_symbols", {"mdot": r"\dot{m}"})
 
 #: Units exported into every document namespace under their bare names.
 _UNITS = """
@@ -47,9 +38,16 @@ for _name in _UNITS.split():
     except AttributeError:  # pragma: no cover - registry drift
         pass
 
-#: Math functions exported bare so handcalcs renders them as real operators.
+def sqrt(x):
+    """Square root that keeps units: sqrt(100 mm²) is 10 mm."""
+    if isinstance(x, ureg.Quantity):
+        return x ** 0.5
+    return math.sqrt(x)
+
+
+#: Math functions exported bare so calc cells render them as real operators.
 MATH_NAMES: dict[str, object] = {
-    "sqrt": math.sqrt,
+    "sqrt": sqrt,
     "sin": math.sin,
     "cos": math.cos,
     "tan": math.tan,

@@ -6,27 +6,13 @@ from pathlib import Path
 
 from .content import Column, Sources, Table
 from .doc.blocks import Block
+from .doc.extension import Extension, MissingInput, UnavailableInput
 from .doc.graph import analyze_code
 from .doc.loader import KipSyntaxError
 from .doc.validate import Diagnostic
-from .req import Item, Requirement, Requirements, requirements_table, variables_table, compliance_matrix
+from .req import Requirements, requirements_table, variables_table, compliance_matrix
 from .sheets import Constants, Sheet
 from .packet_config import PacketConfig, SHEETS, STAGES
-
-
-class UnavailableInput(Exception):
-    """A declared input is absent; it is not a Python or schema error."""
-
-
-class MissingInput:
-    def __init__(self, reason):
-        self.reason = reason
-
-    def __getattr__(self, name):
-        raise UnavailableInput(self.reason)
-
-    def __getitem__(self, key):
-        raise UnavailableInput(self.reason)
 
 
 @dataclass
@@ -70,13 +56,19 @@ def _sheet(root, spec):
     return table
 
 
-class ComponentPacket:
+class ComponentPacket(Extension):
+    """``# %% packet component``: ordered sections, known sheets, visible gaps."""
+
+    draft = True
+
     def __init__(self, blocks, path):
         declarations = [b for b in blocks if b.kind == "packet"]
         marker = self.marker = declarations[0]
         self.path = Path(path)
         self.root = self.path.resolve().parent
         self.authored = [b for b in blocks if b.kind != "packet"]
+        super().__init__(self.authored)
+        self.identity = None
         self.materials = {}
         self.status = {}
         if len(declarations) != 1 or marker.id != "component" or marker.source.strip():
@@ -96,6 +88,7 @@ class ComponentPacket:
         if self.na - self.sections.keys():
             self.error("na= sections must appear in the packet order")
         reserved = {alias for alias, name in (("C", "constants"), ("reqs", "requirements")) if name in self.sheets}
+        self.provided = frozenset(reserved)
         for block in self.authored:
             if block.id.startswith("_packet_"):
                 self.error("block ids beginning _packet_ are reserved")
@@ -162,10 +155,9 @@ class ComponentPacket:
         if toml.exists():
             reqs = Requirements.load(toml)
         elif xlsx.exists():
-            sheet = _sheet(self.root, spec)
-            reqs = Requirements(Item(self.root.name), {
-                str(r["id"]): Requirement(str(r["id"]), str(r["text"]), str(r["verification"])) for r in sheet
-            }, {}, path=xlsx)
+            reqs = Requirements.load(xlsx)
+            self.identity = reqs.item
+            _sheet(self.root, spec)  # the packet's header and required-cell checks
         else:
             raise UnavailableInput(f"Missing {self.config.requirements_file} or {spec.path}.")
         self.identity = reqs.item
@@ -195,7 +187,7 @@ class ComponentPacket:
             states = [m.state for m in required] + [r.state if r.ok else "ERROR" for r in work]
             if any(s != "PRESENT" for s in states):
                 pending.add(stage)
-            present = any(r.latex or r.typst or r.text or r.content or r.checks for r in work)
+            present = any(r.equations or r.typst or r.text or r.content or r.checks for r in work)
             state = next((s for s in ("ERROR", "BLOCKED", "OPEN") if s in states), "PRESENT" if required or present else "OPEN")
             reason = "; ".join(m.reason for m in [*required, *work] if m.reason)
             if state == "BLOCKED":
@@ -303,6 +295,15 @@ class ComponentPacket:
                 return "BLOCKED", "Verification work could not complete."
             return status
 
+    def page(self, spec):
+        """Title, document number and revision default to the item's identity."""
+        from dataclasses import replace
+        item = self.identity
+        if item is None:
+            return spec
+        return replace(spec, title=spec.title or item.name or item.id,
+                       document=spec.document or item.id, revision=spec.revision or item.revision)
+
     @property
     def outstanding(self):
         return {stage: (state, reason) for stage, (state, reason) in self.status.items()
@@ -327,7 +328,7 @@ def create_inputs(root):
     config = PacketConfig(root / "packet.toml")
     for name, spec in config.sheets.items():
         if name == "requirements":
-            continue  # The scaffold uses the TOML alternative.
+            continue  # written with its Item and Variables sheets by the scaffold
         if spec.path not in books:
             books[spec.path] = Workbook()
             books[spec.path].remove(books[spec.path].active)

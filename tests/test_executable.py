@@ -30,7 +30,7 @@ answer = analysis.stress_model(100 * N, 10 * mm)
     data = compile_pdf(emit(document))
     text = "".join(p.get_text() for p in pymupdf.open(stream=data, filetype="pdf"))
     assert "Calculation(" not in text and "1.273" in text
-    assert "area" in document.results["strength"].latex
+    assert any('"area"' in eq.wide() for eq in document.results["strength"].equations)
 
 
 def test_bare_calculation_call_has_the_same_equations_and_result_chip(tmp_path):

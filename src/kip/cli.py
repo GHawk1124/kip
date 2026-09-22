@@ -50,21 +50,36 @@ def _load(path: Path, strict: bool):
     from .doc.loader import KipSyntaxError
     from .doc.validate import ValidationError
     from .doc.kernel import ExecutionError
-    from .doc.graph import CycleError
-
     try:
         return build(path, strict=strict)
-    except (KipSyntaxError, CycleError, OSError) as e:
+    except (KipSyntaxError, OSError) as e:
         _fail(str(e))
     except ValidationError as e:
         for d in e.diagnostics:
-            err.print(f"  {d.format(path)}")
+            err.print(f"  {d.format(path)}", markup=False)
         _fail(f"{len(e.diagnostics)} validation error(s); nothing was rendered")
     except ExecutionError as e:
-        for r in e.results:
-            if r.failed:
-                err.print(f"  [red]{r.block_id}[/red]: {r.error}")
+        _print_failures(e.results, path)
         _fail("document failed to execute")
+
+
+def _print_failures(results, doc_path: Path) -> int:
+    """Each failed cell with the file:line where it failed; each cell it blocked."""
+    from rich.markup import escape
+    from .doc.kernel import where
+
+    failed = [r for r in results if r.failed]
+    for r in failed:
+        at = where(r)
+        err.print(f"  [red]{escape(str(doc_path))}: {escape(r.block_id)}: "
+                  f"{escape(r.error or '')}[/red]")
+        if at:
+            err.print(f"    at {escape(at)}", style="dim")
+    for r in results:
+        if r.state == "BLOCKED" and r.reason.startswith("Waiting on"):
+            err.print(f"  [yellow]{escape(r.block_id)}: blocked. "
+                      f"{escape(r.reason)}[/yellow]")
+    return len(failed)
 
 
 def _resolve_doc(path: Path | None) -> Path:
@@ -164,7 +179,7 @@ def build(
     dt = (time.perf_counter() - t0) * 1000
 
     for d in document.warnings:
-        err.print(f"  [yellow]{d.format(doc_path)}[/yellow]")
+        err.print(f"  {d.format(doc_path)}", style="yellow", markup=False)
     console.print(
         f"[green]built[/green] {written} "
         f"({written.stat().st_size:,} B, {len(document.ordered_blocks())} blocks, "
@@ -199,14 +214,11 @@ def check(
     n_warn = len(document.warnings)
     for d in document.diagnostics:
         style = "red" if d.severity == "error" else "yellow"
-        err.print(f"  [{style}]{d.format(doc_path)}[/{style}]")
+        err.print(f"  {d.format(doc_path)}", style=style, markup=False)
 
     from rich.markup import escape
 
-    failed = [r for r in document.results.values() if r.failed]
-    for r in failed:
-        err.print(f"  [red]{escape(str(doc_path))}: "
-                  f"{escape(r.block_id)}: {escape(r.error or '')}[/red]")
+    n_failed = _print_failures(list(document.results.values()), doc_path)
 
     unresolved = {k: v for k, v in document.graph.unresolved.items() if v}
     n_warn += len(unresolved)
@@ -239,12 +251,12 @@ def check(
                 f"[green]requirements[/green] {escape(value.item.id)}: "
                 f"{passed} verified, 0 open")
 
-    total_err = n_err + len(failed) + req_failures
-    if document.packet is not None:
-        for stage, (state, reason) in document.packet.outstanding.items():
+    total_err = n_err + n_failed + req_failures
+    for extension in document.extensions:
+        for stage, (state, reason) in extension.outstanding.items():
             err.print(f"{stage}: {state} - {reason}", markup=False, soft_wrap=True)
-        total_err += len(document.packet.outstanding)
-    if render and not n_err and not failed:
+        total_err += len(extension.outstanding)
+    if render and not n_err and not n_failed:
         from .render import emit, compile_pdf
         from .render.layout import Layout
         sidecar = doc_path.parent / "layout.toml"
@@ -276,8 +288,6 @@ def show(
 
     position = {b: i for i, b in enumerate(document.graph.order)}
     blocks = document.ordered_blocks()
-    if document.packet is None:
-        blocks = sorted(blocks, key=lambda b: position.get(b.id, 0))
     for block in blocks:
         result = document.results.get(block.id)
         deps = sorted(d for d in document.graph.edges.get(block.id, ()) if d != "__prelude__")
@@ -377,16 +387,30 @@ def watch(
 
 
 @app.command()
+def migrate(
+    path: Path = typer.Argument(Path("."), help="Project folder (default: here)."),
+) -> None:
+    """Convert requirements.toml and sources.toml into input/ workbooks."""
+    from .migrate import migrate as convert
+
+    try:
+        done = convert(Path(path))
+    except (OSError, ValueError) as e:
+        _fail(str(e))
+    if not done:
+        console.print("nothing to migrate")
+    for old, new in done:
+        console.print(f"[green]wrote[/green] {new}  (kept {old.name}.bak)")
+
+
+@app.command()
 def version() -> None:
     """Print versions of kip and its rendering toolchain."""
     from . import __version__
-    from .math.handcalc_bridge import MITEX_VERSION
-    import handcalcs, sympy, pint, typst as _typst
+    import sympy, pint, typst as _typst
 
     console.print(f"kip       {__version__}")
     console.print(f"typst-py  {getattr(_typst, '__version__', 'unknown')}")
-    console.print(f"mitex     {MITEX_VERSION} (pinned)")
-    console.print(f"handcalcs {handcalcs.__version__}")
     console.print(f"sympy     {sympy.__version__}")
     console.print(f"pint      {pint.__version__}")
     console.print(f"python    {sys.version.split()[0]}")

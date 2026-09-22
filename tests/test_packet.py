@@ -84,7 +84,7 @@ known = 2 + 2
     assert doc.results["inputs"].state == "BLOCKED"
     assert doc.results["independent_check"].values["known"] == 4
     populated(tmp_path)
-    execute(doc, previous=doc.results)
+    execute(doc)
     assert doc.results["initial_sizing"].state == "PRESENT"
     assert doc.namespace["result"].twice.magnitude == 24
     assert doc.packet.status["inputs"][0] == "PRESENT"
@@ -92,7 +92,7 @@ known = 2 + 2
     book.active["B2"] = 15
     book.save(tmp_path / "input/constants.xlsx")
     book.close()
-    execute(doc, previous=doc.results)
+    execute(doc)
     assert doc.namespace["result"].twice.magnitude == 30
 
 
@@ -353,10 +353,11 @@ na = ["review"]
 enabled = false
 ''')
     doc = build(path=tmp_path / "doc.py", source='''
-C = {"load": 12}
+from types import SimpleNamespace
+C = SimpleNamespace(load=12)
 # %% packet component config="custom.toml"
 # %% calc "Input" stage=inputs
-P = C["load"]
+P = C.load
 ''')
     assert doc.packet.status["review"][0] == "N/A"
     assert doc.namespace["P"] == 12
@@ -431,9 +432,10 @@ def test_new_cli_can_set_two_column_default(tmp_path):
     root = tmp_path / "two-column"
     result = CliRunner().invoke(app, ["new", str(root), "--template", "component", "--columns", "2", "--no-sync"])
     assert result.exit_code == 0, result.output
-    assert Layout.load(root / "layout.toml").page.columns == 2
+    assert "run_document(__file__, title=\"Two Column\", columns=2)" in (root / "doc.py").read_text()
+    assert not (root / "layout.toml").exists()
     doc = build(root / "doc.py")
-    pdf = pymupdf.open(stream=compile_pdf(emit(doc, Layout.load(root / "layout.toml"))))
+    pdf = pymupdf.open(stream=compile_pdf(emit(doc)))
     assert "4 Preliminary Analysis" in "".join(p.get_text() for p in pdf)
 
 
