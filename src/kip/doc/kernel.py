@@ -342,6 +342,9 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
             import ast
 
             tree = ast.parse(block.source, f"<{block.id}>")
+            if block.renders_math:
+                from ..math.calc import display_units, with_conversions
+                with_conversions(tree.body, display_units(block.source)[1])
             tail = None
             if (tree.body and (block.has_content or block.kind in ("calc", "calculation"))
                     and isinstance(tree.body[-1], ast.Expr)):

@@ -27,7 +27,7 @@ from .printer import render_name
 __all__ = [
     "CalcRenderError", "Equation", "RenderedCalc", "render_calc", "check_calc",
     "last_assigned_names", "display_units", "unit_text", "value_math",
-    "is_external_call",
+    "is_external_call", "convert", "with_conversions",
 ]
 
 #: ``sigma = M * c / I    # -> MPa`` asks for the result in MPa.
@@ -138,6 +138,50 @@ def display_units(source: str) -> "tuple[str, list[tuple[str, str]]]":
         requests.append((name, match.group("unit")))
         lines[row - 1] = lines[row - 1][:col].rstrip()
     return "\n".join(lines), requests
+
+
+def convert(value, unit: str, name: str):
+    """``value.to(unit)`` with an error that names the result and the unit."""
+    if not isinstance(value, ureg.Quantity):
+        raise CalcRenderError(
+            f"'# -> {unit}' asks for {name!r} in {unit}, but it is a plain "
+            f"{type(value).__name__}, not a quantity with units")
+    try:
+        return value.to(unit)
+    except Exception as e:  # pint raises several types
+        raise CalcRenderError(f"cannot convert {name!r} from {value.units:~P} to {unit}: {e}") from e
+
+
+def with_conversions(body: list[ast.stmt], conversions: list[tuple[str, str]]) -> None:
+    """Convert each annotated result right after the line that assigns it.
+
+    ``sigma = M / Z  # -> MPa`` must hold MPa for the *next* line too, not
+    only when it is displayed; otherwise a later ratio carries leftover
+    units such as mm²·GPa/N. Works on a module body or a function body.
+    """
+    wanted = dict(conversions)
+
+    def visit(stmts: list[ast.stmt]) -> None:
+        i = 0
+        while i < len(stmts):
+            node = stmts[i]
+            if isinstance(node, ast.If):
+                visit(node.body)
+                visit(node.orelse)
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)
+                  and node.targets[0].id in wanted):
+                name = node.targets[0].id
+                call = ast.parse(
+                    f"{name} = __import__('kip.math.calc', fromlist=['convert'])"
+                    f".convert({name}, {wanted[name]!r}, {name!r})").body[0]
+                stmts.insert(i + 1, ast.copy_location(call, node))
+                i += 1
+            i += 1
+
+    visit(body)
+    for node in body:
+        ast.fix_missing_locations(node)
 
 
 def is_external_call(tree: ast.Module) -> bool:
@@ -337,6 +381,8 @@ def _unit_math(units) -> str:
 
 def value_math(value, precision: int = 3) -> tuple[str, int]:
     """A computed value as Typst math, with its binding strength."""
+    if isinstance(value, ureg.Quantity) and value.dimensionless and not value.unitless:
+        value = value.to("dimensionless")  # MPa/psi, mm/m: a plain ratio
     if isinstance(value, ureg.Quantity):
         number = _number_math(value.magnitude, precision)
         unit = _unit_math(value.units)
@@ -522,17 +568,9 @@ class _Printer:
 
 
 def _convert(namespace: dict, name: str, unit: str) -> None:
-    value = namespace.get(name)
-    if value is None:
+    if namespace.get(name) is None:
         raise CalcRenderError(f"a display unit of {unit} was requested but {name!r} has no value")
-    if not isinstance(value, ureg.Quantity):
-        raise CalcRenderError(
-            f"a display unit of {unit} was requested but {name!r} is a plain "
-            f"{type(value).__name__}, not a quantity with units")
-    try:
-        namespace[name] = value.to(unit)
-    except Exception as e:  # pint raises several types
-        raise CalcRenderError(f"cannot convert {name!r} from {value.units:~P} to {unit}: {e}") from e
+    namespace[name] = convert(namespace[name], unit, name)
 
 
 def _is_input(node, namespace) -> bool:

@@ -109,6 +109,7 @@ def test_an_undefined_unit_name_used_as_a_variable_is_an_error(body, name):
     ("H = 40 * mm\nA_c = H * 2", ""),
     ("q = f(2)", "def f(L):\n    return L * 2"),
     ("t = Q(1.5, s)", ""),
+    ("F_i = [p * N for p in loads]", ""),
 ])
 def test_unit_names_in_unit_positions_or_defined_are_fine(body, prelude):
     assert unit_errors(body, prelude) == []

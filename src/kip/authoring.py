@@ -167,9 +167,14 @@ def calculation(fn=None, *, units=None, precision=3):
             raise ValidationError(errors, path)
 
         inner = fn
-        if not returns:
-            # Rewriting the tail is what lets the author stop writing it.
+        if not returns or annotated:
+            # Rewriting the tail is what lets the author stop writing it, and
+            # each annotated result is converted before the next line uses it.
+            from .math.calc import with_conversions
             function.decorator_list = []
+            if returns:
+                function.body.pop()
+            with_conversions(function.body, annotated)
             function.body.append(ast.Return(ast.Call(
                 func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[])))
             module = ast.fix_missing_locations(

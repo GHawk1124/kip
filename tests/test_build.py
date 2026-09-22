@@ -381,3 +381,39 @@ def test_two_documents_import_their_own_analysis_modules(tmp_path):
     assert build(path=tmp_path / "one" / "doc.py").value("y") == 2
     assert build(path=tmp_path / "two" / "doc.py").value("y") == 3
     assert "analysis" not in sys.modules
+
+
+def test_a_converted_result_is_converted_for_the_next_line_too():
+    doc = build(source='''from kip import *
+# %% inputs i
+P = 150 * N
+L = 400 * mm
+E = 68.9 * GPa
+I_x = 39062.5 * mm**4
+d_allow = 2 * mm
+# %% calc d "Deflection"
+d_tip = P * L**3 / (3 * E * I_x)   # -> mm
+n = d_allow / d_tip
+''', path="doc.py")
+    n = doc.value("n")
+    assert n.dimensionless and str(n.units) == "dimensionless"
+    assert shown(doc.results["d"]).endswith("= 1.682")
+
+
+def test_calculation_functions_convert_before_the_next_equation(tmp_path):
+    (tmp_path / "beam.py").write_text('''from kip import *
+
+
+@calculation
+def deflection(P, L, E, I_x, d_allow):
+    # equations
+    d_tip = P * L**3 / (3 * E * I_x)   # -> mm
+    n = d_allow / d_tip
+    return locals()
+''')
+    doc = build(source='''from kip import *
+import beam
+# %% calc c
+r = beam.deflection(150 * N, 400 * mm, 68.9 * GPa, 39062.5 * mm**4, 2 * mm)
+''', path=tmp_path / "doc.py")
+    assert str(doc.value("r").n.units) == "dimensionless"

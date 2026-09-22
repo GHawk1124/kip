@@ -112,14 +112,18 @@ def unit_misuse(tree: ast.AST, candidates: frozenset[str] | set[str],
 
     ``L`` is a litre, so ``P / (b * L)`` with no ``L`` defined silently
     divides by a volume. A unit name is accepted where only a unit makes
-    sense: after a number (``2 * m``, ``9.81 * m / s**2``), inside a unit
-    expression written that way (``kg / m**3``), or passed to a call
-    (``x.to(m)``, ``Q(3, m)``). Anywhere else it is almost certainly a
+    sense: after a number (``2 * m``, ``9.81 * m / s**2``) or a loop variable
+    (``[p * N for p in loads]``), inside a unit expression written that way
+    (``kg / m**3``), or passed to a call (``x.to(m)``, ``Q(3, m)``). Anywhere else it is almost certainly a
     variable the author forgot to define.
     """
     if not candidates:
         return []
     units = _unit_names() if units is None else units
+    # `[p * N for p in loads]`: a loop variable times a unit gives the list its units.
+    counters = {n.id for node in ast.walk(tree)
+                if isinstance(node, (ast.comprehension, ast.For))
+                for n in ast.walk(node.target) if isinstance(n, ast.Name)}
     parents: dict[ast.AST, ast.AST] = {}
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
@@ -147,7 +151,9 @@ def unit_misuse(tree: ast.AST, candidates: frozenset[str] | set[str],
             top = parents[top]
         parent = parents.get(top)
         if isinstance(parent, ast.BinOp) and isinstance(parent.op, (ast.Mult, ast.Div)):
-            return parent.right is top and is_quantity(parent.left)
+            left = parent.left
+            return parent.right is top and (
+                is_quantity(left) or (isinstance(left, ast.Name) and left.id in counters))
         if isinstance(parent, (ast.Call, ast.keyword)):
             return getattr(parent, "func", None) is not top
         if isinstance(parent, (ast.Assign, ast.AnnAssign)):
