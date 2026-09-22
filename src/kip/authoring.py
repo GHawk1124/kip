@@ -109,6 +109,21 @@ def _equation_source(fn):
     return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns, start
 
 
+def _unit_misuse(fn, tree, first_line, path):
+    """``H`` with no ``H`` defined is a henry, not a height: report it."""
+    from .doc.validate import (Diagnostic, _bound_anywhere, ambiguous_units,
+                               misuse_message, unit_misuse)
+    from .units import ureg
+    bound = _bound_anywhere(tree)
+    candidates = {name for name in ambiguous_units() - bound
+                  if isinstance(fn.__globals__.get(name), ureg.Unit)}
+    out = []
+    for node in unit_misuse(tree, candidates):
+        message, hint = misuse_message(node.id)
+        out.append(Diagnostic("error", fn.__name__, first_line - 1 + node.lineno, message, hint))
+    return out
+
+
 def calculation(fn=None, *, units=None, precision=3):
     """Render a function's equations and expose its computed local values.
 
@@ -147,6 +162,7 @@ def calculation(fn=None, *, units=None, precision=3):
                       body_start=body_start,
                       body_end=body_start + len(equations.splitlines()) - 1)
         errors = [d for d in validate_all([block], path) if d.severity == "error"]
+        errors += _unit_misuse(fn, tree, first_line, path)
         if errors:
             raise ValidationError(errors, path)
 

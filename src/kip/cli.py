@@ -56,7 +56,7 @@ def _load(path: Path, strict: bool):
         _fail(str(e))
     except ValidationError as e:
         for d in e.diagnostics:
-            err.print(f"  {d.format(path)}")
+            err.print(f"  {d.format(path)}", markup=False)
         _fail(f"{len(e.diagnostics)} validation error(s); nothing was rendered")
     except ExecutionError as e:
         _print_failures(e.results, path)
@@ -179,7 +179,7 @@ def build(
     dt = (time.perf_counter() - t0) * 1000
 
     for d in document.warnings:
-        err.print(f"  [yellow]{d.format(doc_path)}[/yellow]")
+        err.print(f"  {d.format(doc_path)}", style="yellow", markup=False)
     console.print(
         f"[green]built[/green] {written} "
         f"({written.stat().st_size:,} B, {len(document.ordered_blocks())} blocks, "
@@ -214,7 +214,7 @@ def check(
     n_warn = len(document.warnings)
     for d in document.diagnostics:
         style = "red" if d.severity == "error" else "yellow"
-        err.print(f"  [{style}]{d.format(doc_path)}[/{style}]")
+        err.print(f"  {d.format(doc_path)}", style=style, markup=False)
 
     from rich.markup import escape
 

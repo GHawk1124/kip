@@ -82,3 +82,46 @@ def test_diagnostic_line_numbers_are_absolute():
 def test_syntax_error_is_reported_as_a_diagnostic():
     found = errors("x = = 1")
     assert found and "syntax error" in found[0].message
+
+
+def unit_errors(body, prelude=""):
+    from kip.doc.validate import unit_diagnostics
+    src = f"from kip import *\n{prelude}\n# %% calc b\n{body}\n"
+    return [d.message for d in unit_diagnostics(parse(src, "doc.py"))]
+
+
+@pytest.mark.parametrize("body,name", [
+    ("P = 2 * kN\nb = 5 * mm\nsigma = P / (b * H)", "H"),
+    ("m_1 = 3 * kg\nW = m_1 * g", "g"),
+    ("V_1 = L * 2", "L"),
+    ("x = L.to(mm)", "L"),
+])
+def test_an_undefined_unit_name_used_as_a_variable_is_an_error(body, name):
+    found = unit_errors(body)
+    assert any(f"{name!r} is not defined here" in m for m in found), found
+
+
+@pytest.mark.parametrize("body,prelude", [
+    ("a = 9.81 * m / s**2", ""),
+    ("rho = 7850 * kg / m**3", ""),
+    ("E = 200 * GPa\nx = E.to(MPa)", ""),
+    ("y = 3 * mm\nz = y.to(m)", ""),
+    ("H = 40 * mm\nA_c = H * 2", ""),
+    ("q = f(2)", "def f(L):\n    return L * 2"),
+    ("t = Q(1.5, s)", ""),
+])
+def test_unit_names_in_unit_positions_or_defined_are_fine(body, prelude):
+    assert unit_errors(body, prelude) == []
+
+
+def test_calculation_functions_are_checked_too(tmp_path):
+    import importlib.util
+    from kip.doc.validate import ValidationError
+    path = tmp_path / "loose.py"
+    path.write_text("from kip import *\n\n\n@calculation\ndef weight(m_1):\n"
+                    "    # equations\n    W = m_1 * g\n")
+    spec = importlib.util.spec_from_file_location("loose", path)
+    with pytest.raises(ValidationError) as exc:
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    assert exc.value.diagnostics[0].line == 7
+    assert "'g' is not defined here" in exc.value.diagnostics[0].message

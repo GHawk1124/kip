@@ -534,6 +534,8 @@ def build(
     diags = validate_all(blocks, p)
     diags.extend(_citation_diagnostics(blocks, p))
     diags.extend(_early_use_diagnostics(blocks, graph))
+    from .validate import unit_diagnostics
+    diags.extend(unit_diagnostics(blocks))
     doc = Document(path=p, source=text, blocks=blocks, graph=graph, diagnostics=diags,
                    extensions=extensions)
 
