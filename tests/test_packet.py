@@ -353,10 +353,11 @@ na = ["review"]
 enabled = false
 ''')
     doc = build(path=tmp_path / "doc.py", source='''
-C = {"load": 12}
+from types import SimpleNamespace
+C = SimpleNamespace(load=12)
 # %% packet component config="custom.toml"
 # %% calc "Input" stage=inputs
-P = C["load"]
+P = C.load
 ''')
     assert doc.packet.status["review"][0] == "N/A"
     assert doc.namespace["P"] == 12

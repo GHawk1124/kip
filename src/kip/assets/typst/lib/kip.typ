@@ -152,7 +152,9 @@
 
 // Inline math has real ascent/descent (fractions and scripts). A zero-width
 // strut isolates its ascent, allowing the equation baseline to meet a rule.
-#let grid-math(body) = block(spacing: 0pt, context layout(size => {
+// A stacked equation's continuation rows are unnumbered and left-aligned so
+// their equals signs line up under the first row's.
+#let grid-math(body, numbered: true, stacked: false) = block(spacing: 0pt, context layout(size => {
   show par: it => it
   let g = kip-grid.get()
   let natural = measure(body)
@@ -162,9 +164,12 @@
   let m = measure(content)
   let ascent = measure([#box(height: 1000pt, baseline: 1000pt)#content]).height - 1000pt
   let pad = if kip-snapping.get() { calc.ceil(ascent / g) * g - ascent } else { 0pt }
-  block(width: 100%, height: 0pt, spacing: 0pt)[#equation-number.step()#place(top + right, dy: pad + ascent - 6pt, text(size: 8pt, top-edge: 6pt, bottom-edge: -2pt)[(#context equation-number.display("1"))])]
+  if numbered {
+    block(width: 100%, height: 0pt, spacing: 0pt)[#equation-number.step()#place(top + right, dy: pad + ascent - 6pt, text(size: 8pt, top-edge: 6pt, bottom-edge: -2pt)[(#context equation-number.display("1"))])]
+  }
   block(width: 100%, height: if kip-snapping.get() { calc.ceil((pad + m.height) / g) * g } else { m.height },
-    spacing: 0pt, inset: (top: pad), align(center, content))
+    spacing: 0pt, inset: (top: pad, left: if stacked { 2 * g } else { 0pt }),
+    align(if stacked { left } else { center }, content))
 }))
 
 // Graphics have intrinsic coordinates; quantise only their occupied height.

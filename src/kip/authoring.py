@@ -134,7 +134,7 @@ def calculation(fn=None, *, units=None, precision=3):
     remains as an override for a unit that cannot be written as a comment.
     """
     def decorate(fn):
-        from .math.handcalc_bridge import display_units
+        from .math.calc import display_units
         tree, function, raw, returns = _equation_source(fn)
         full_source = textwrap.dedent(inspect.getsource(fn))
         signature = inspect.signature(fn)

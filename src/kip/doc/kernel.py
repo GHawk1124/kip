@@ -6,7 +6,7 @@ import traceback
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from ..math.handcalc_bridge import CalcRenderError, render_calc
+from ..math.calc import CalcRenderError, render_calc
 from ..math.printer import typst_math
 from ..units import fmt_quantity, namespace as fresh_namespace
 from .blocks import Block
@@ -24,8 +24,7 @@ class BlockResult:
     block_id: str
     kind: str
     ok: bool = True
-    latex: str | None = None          # handcalcs output (mitex body), wide form
-    latex_long: str | None = None     # stacked form, for narrow columns
+    equations: list = field(default_factory=list)  # rendered calc lines (math.calc.Equation)
     typst: str | None = None          # native Typst math (symbolic blocks)
     text: str | None = None           # resolved prose
     content: object | None = None     # Figure / Table / Drawing / Sources
@@ -129,7 +128,7 @@ def _pick_content(block: Block, ns: dict, before: set[str], expression=None):
     make the choice -- and therefore the rendered PDF -- unstable.
     """
     from ..content import Drawing, Figure, Sources, Table
-    from ..math.handcalc_bridge import last_assigned_names
+    from ..math.calc import last_assigned_names
     from ..req import Requirements
     from ..sheets import Constants, Sheet
 
@@ -169,7 +168,7 @@ def _render_symbolic(block: Block, ns: dict) -> str:
     """Render the sympy expressions a symbolic block bound, via TypstPrinter."""
     import sympy as sp
 
-    from ..math.handcalc_bridge import last_assigned_names
+    from ..math.calc import last_assigned_names
 
     lines: list[str] = []
     # Source order, not set order: block.defs is a frozenset and iterating it
@@ -273,13 +272,12 @@ def _execute_ordered(doc, ns, previous, only):
 def _controlled_rows(block: Block, ns: dict) -> list:
     """Match names bound by this block back to the controlled variables read.
 
-    Reading ``reqs.P_design`` is attribute access, which handcalcs renders
-    wrongly, so these blocks bypass handcalcs entirely and are rendered with
-    their provenance instead: value, levying requirement, and owning item.
+    These cells are rendered with their provenance rather than as arithmetic:
+    value, levying requirement, and owning item.
     """
     import ast
 
-    from ..math.handcalc_bridge import last_assigned_names
+    from ..math.calc import last_assigned_names
 
     sources: dict[str, str] = {}
     try:
@@ -342,7 +340,7 @@ def _run_block(block: Block, ns: dict, key: str, *, draft=False) -> BlockResult:
 
             tree = ast.parse(block.source, f"<{block.id}>")
             tail = None
-            if (tree.body and (block.has_content or block.kind == "calculation")
+            if (tree.body and (block.has_content or block.kind in ("calc", "calculation"))
                     and isinstance(tree.body[-1], ast.Expr)):
                 tail = tree.body.pop().value
             with collect_reads() as reads:
@@ -381,23 +379,14 @@ def _run_block(block: Block, ns: dict, key: str, *, draft=False) -> BlockResult:
             res.calculation = calculation
             rendered = render_calc(calculation.source, calculation.values,
                                    precision=calculation.precision)
-            res.latex, res.latex_long = rendered.latex, rendered.latex_long
-        elif block.uses_handcalcs and block.source.strip():
-            from ..math.handcalc_bridge import display_units
-            # `# -> MPa` beside the equation says what unit to read it in;
-            # result_unit= on the marker still wins where both are given.
+            res.equations = rendered.equations
+        elif block.renders_math and block.source.strip():
+            from ..math.calc import display_units
+            # `# -> MPa` beside the equation says what unit to read it in.
             shown, annotated = display_units(block.source)
-            rendered = render_calc(
-                shown, ns,
-                precision=block.precision,
-                result_units=annotated + block.result_units,
-                # "params" is handcalcs' compact input-listing mode: a bare
-                # `x = 5 mm` needs no substitution/result columns.
-                override=block.meta.get(
-                    "display", "params" if block.kind == "given" else ""),
-            )
-            res.latex = rendered.latex
-            res.latex_long = rendered.latex_long
+            rendered = render_calc(shown, ns, precision=block.precision,
+                                   result_units=annotated + block.result_units)
+            res.equations = rendered.equations
             # refresh values after any unit conversion
             for n in rendered.converted:
                 if n in ns:

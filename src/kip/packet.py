@@ -195,7 +195,7 @@ class ComponentPacket:
             states = [m.state for m in required] + [r.state if r.ok else "ERROR" for r in work]
             if any(s != "PRESENT" for s in states):
                 pending.add(stage)
-            present = any(r.latex or r.typst or r.text or r.content or r.checks for r in work)
+            present = any(r.equations or r.typst or r.text or r.content or r.checks for r in work)
             state = next((s for s in ("ERROR", "BLOCKED", "OPEN") if s in states), "PRESENT" if required or present else "OPEN")
             reason = "; ".join(m.reason for m in [*required, *work] if m.reason)
             if state == "BLOCKED":

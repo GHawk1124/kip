@@ -380,13 +380,10 @@ def watch(
 def version() -> None:
     """Print versions of kip and its rendering toolchain."""
     from . import __version__
-    from .math.handcalc_bridge import MITEX_VERSION
-    import handcalcs, sympy, pint, typst as _typst
+    import sympy, pint, typst as _typst
 
     console.print(f"kip       {__version__}")
     console.print(f"typst-py  {getattr(_typst, '__version__', 'unknown')}")
-    console.print(f"mitex     {MITEX_VERSION} (pinned)")
-    console.print(f"handcalcs {handcalcs.__version__}")
     console.print(f"sympy     {sympy.__version__}")
     console.print(f"pint      {pint.__version__}")
     console.print(f"python    {sys.version.split()[0]}")

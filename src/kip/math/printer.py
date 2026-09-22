@@ -1,8 +1,8 @@
 """SymPy -> Typst math printer.
 
 There is no ``sympy.printing.typst`` upstream (only an open feature request), so
-kip ships its own.  Symbolic blocks render through this printer directly, which
-avoids a LaTeX round-trip; handcalcs output still goes via mitex.
+kip ships its own.  Symbolic blocks render through this printer directly;
+calc cells use :mod:`kip.math.calc`, which shares :func:`render_name`.
 
 Typst math notes that drive the implementation:
 

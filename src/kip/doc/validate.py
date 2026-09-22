@@ -1,18 +1,9 @@
-r"""AST lint for handcalcs-rendered blocks.
+"""Static checks on calc and inputs cells, run before anything executes.
 
-This is a **correctness** pass, not style.  handcalcs
-renders several perfectly valid Python constructs *silently wrong* -- the
-document compiles, looks plausible, and states false mathematics:
-
-===========================  ==========================================
-``y = x if c else z``        renders ``y = x``; the condition vanishes
-``a, b = 3.0, 4.0``          renders ``a, b = 3.0, 4.0, 4.000 = ... = 3.000``
-``y = q.to(MPa)``            renders ``\mathrm{q.to} \mathrm{MPa}``
-``y = (expr).to(MPa)``       conversion silently dropped, or hard crash
-===========================  ==========================================
-
-Rejecting these is therefore mandatory.  Use ``result_unit=`` block metadata
-instead of ``.to()``.
+Calc cells are rendered from their own syntax, so they are held to the grammar
+:func:`kip.math.calc.check_calc` can display faithfully: assignments,
+arithmetic, bare function calls and if/else. Everything else is refused with a
+hint instead of being rendered as algebra the code did not perform.
 """
 
 from __future__ import annotations
@@ -53,81 +44,29 @@ class ValidationError(Exception):
         )
 
 
-_BANNED_STMTS = {
-    ast.For: ("loops", "handcalcs cannot render iteration; unroll it or compute in a prelude helper"),
-    ast.AsyncFor: ("loops", "handcalcs cannot render iteration"),
-    ast.While: ("loops", "handcalcs cannot render iteration"),
-    ast.FunctionDef: ("function definitions", "define helpers in the prelude, above the first block marker"),
-    ast.AsyncFunctionDef: ("function definitions", "define helpers in the prelude"),
-    ast.ClassDef: ("class definitions", "define classes in the prelude"),
-    ast.With: ("with statements", "not supported by handcalcs"),
-    ast.Try: ("try statements", "not supported by handcalcs"),
-}
-
-
 def validate_block(block: Block, path: str | Path = "doc.py") -> list[Diagnostic]:
-    """Return diagnostics for one block. Non-handcalcs blocks are not linted."""
+    """Return diagnostics for one block. Only calc and inputs cells are held to a grammar."""
     if not block.is_code or not block.source.strip():
         return []
 
     offset = block.body_start - 1
-    out: list[Diagnostic] = []
-
-    def err(node: ast.AST, msg: str, hint: str = "") -> None:
-        out.append(Diagnostic("error", block.id, offset + getattr(node, "lineno", 1), msg, hint))
-
-    def warn(node: ast.AST, msg: str, hint: str = "") -> None:
-        out.append(Diagnostic("warning", block.id, offset + getattr(node, "lineno", 1), msg, hint))
-
     try:
         tree = ast.parse(block.source)
     except SyntaxError as e:
         return [Diagnostic("error", block.id, offset + (e.lineno or 1),
                            f"syntax error: {e.msg}")]
 
-    if not block.uses_handcalcs:
+    if not block.renders_math:
         # prelude / symbolic / controlled / plot / table / draw / sources
-        # blocks are ordinary Python, not subject to handcalcs' constraints
-        return out
+        # blocks are ordinary Python
+        return []
 
-    for node in ast.walk(tree):
-        for cls, (what, hint) in _BANNED_STMTS.items():
-            if isinstance(node, cls):
-                err(node, f"{what} are not supported in a kip.{block.kind} block", hint)
-
-        if isinstance(node, ast.IfExp):
-            err(node,
-                "conditional expressions render INCORRECTLY (the condition is "
-                "silently dropped from the output)",
-                "use a real if/else statement, which handcalcs renders as "
-                "'Since, x > y ->'")
-
-        if isinstance(node, ast.Attribute):
-            err(node,
-                f"attribute access '.{node.attr}' renders incorrectly",
-                "use result_unit= on the block marker instead of .to(), and "
-                "import bare names in the prelude (from math import sqrt) "
-                "rather than calling math.sqrt")
-
-        if isinstance(node, ast.AugAssign):
-            err(node, "augmented assignment (+=, *=, ...) is not rendered",
-                "write the full expression: x = x + 1")
-
-        if isinstance(node, ast.Assign):
-            if len(node.targets) > 1:
-                err(node, "chained assignment (a = b = ...) is not rendered",
-                    "use one assignment per line")
-            for tgt in node.targets:
-                if isinstance(tgt, (ast.Tuple, ast.List)):
-                    err(tgt,
-                        "tuple/list unpacking renders INCORRECTLY "
-                        "(values and results are interleaved wrongly)",
-                        "assign each name on its own line")
-                elif isinstance(tgt, ast.Name) and tgt.id.endswith("_"):
-                    warn(tgt, f"name {tgt.id!r} renders with an empty subscript "
-                              f"('{tgt.id[:-1]}_{{}}')",
-                         "drop the trailing underscore")
-    return out
+    from ..math.calc import check_calc, is_external_call
+    if block.kind == "calc" and is_external_call(tree):
+        return []  # an @calculation validates its own equations
+    return [Diagnostic("error", block.id, offset + getattr(node, "lineno", 1),
+                       f"{message} in a {block.kind} cell", hint)
+            for node, message, hint in check_calc(tree)]
 
 
 def validate_all(blocks: list[Block], path: str | Path = "doc.py") -> list[Diagnostic]:

@@ -38,11 +38,25 @@ def test_builds_and_computes_correctly():
     assert sigma.magnitude == pytest.approx(112.5, rel=1e-3)
 
 
-def test_result_unit_replaces_the_unusable_to_call():
-    """`.to()` is rejected, so conversion is block metadata."""
+def shown(result) -> str:
+    return "\n".join(eq.wide() for eq in result.equations)
+
+
+def test_result_unit_sets_the_displayed_unit():
     doc = build(source=DOC, path="doc.py")
-    assert "MPa" in doc.results["calc1"].latex
-    assert "8.993" not in doc.results["calc1"].latex
+    assert '112.5 thin "MPa"' in shown(doc.results["calc1"])
+
+
+def test_to_inside_an_equation_converts_without_rendering_the_call():
+    doc = build(source="""from kip import *
+# %% calc s "Stress"
+M = 0.75 * kN * m
+W = 6666.667 * mm**3
+sigma = (M / W).to(MPa)
+""", path="doc.py")
+    text = shown(doc.results["s"])
+    assert "to" not in text.replace("thin", "")
+    assert 'frac(M, W)' in text and '112.5 thin "MPa"' in text
 
 
 def test_result_unit_accepts_a_per_name_mapping():
@@ -236,46 +250,54 @@ def test_scaffolded_project_builds(tmp_path):
     assert out.stat().st_size > 0
 
 
-def test_units_whose_long_name_has_underscores_render_as_symbols():
-    """handcalcs subscripts underscores in a substituted value before formatting.
-
-    psi is ``pound_force_per_square_inch``, so it printed at full precision as
-    ``pound_{force_{per_{square_{inch}}}}`` rather than ``0.484 psi``.
-    """
+def test_units_render_as_their_symbols():
+    """psi's long name is pound_force_per_square_inch; only the symbol is shown."""
     doc = build(source='''from kip import *
-# %% calc clean "Clean"
-dp_clean = 0.4842499437890715 * psi
-
 # %% calc loaded "Loaded"
+dp_clean = 0.4842499437890715 * psi
 dp_cake = 0.4115 * psi
 dp_total = dp_clean + dp_cake
 ''')
-    latex = doc.results["loaded"].latex
-    assert "pound" not in latex
-    # the substituted value is rounded, not carried at full precision
-    assert "0.4842499437890715" not in latex
-    assert r"0.484\ \mathrm{psi}" in latex
+    text = shown(doc.results["loaded"])
+    assert "pound" not in text
+    # an input reads as written; the substituted value is rounded
+    assert '0.4842499437890715 thin "psi"' in text
+    assert '0.484 thin "psi" + 0.411 thin "psi"' in text
 
 
-def test_the_same_holds_for_a_bare_unit_name_in_an_equation():
-    """A bare `psi` in an equation is a pint Unit, whose long name has them too."""
+def test_a_bare_unit_name_in_an_equation_is_a_unit():
     doc = build(source='''from kip import *
 # %% calc bearing "Bearing"
 F = 250.0 * lbf
-A = 2.0 * inch**2
-p_brg = F / A
+A_b = 2.0 * inch**2
+p_brg = F / A_b
+q = 3 * p_brg / psi
 ''')
-    latex = doc.results["bearing"].latex
-    assert "force_" not in latex and "pound" not in latex
-    assert r"\mathrm{lbf}" in latex
+    text = shown(doc.results["bearing"])
+    assert '"lbf"' in text and '"in²"' in text
+    assert 'frac(3 dot p_"brg", "psi")' in text
 
 
-def test_a_plain_unit_still_renders_as_it_did():
+def test_sqrt_keeps_units():
     doc = build(source='''from kip import *
-# %% calc bend "Bend"
-P = 2.0 * kN
-L = 100.0 * mm
-M = P * L
+# %% calc r "Radius"
+A_c = 400 * mm**2
+r = sqrt(A_c / pi)
 ''')
-    latex = doc.results["bend"].latex
-    assert r"\mathrm{kN}" in latex and r"\mathrm{mm}" in latex
+    assert doc.value("r").units == ureg.mm
+    assert "sqrt(frac(A_c, pi))" in shown(doc.results["r"])
+
+
+def test_if_statements_show_the_condition_and_taken_branch():
+    doc = build(source='''from kip import *
+# %% calc g "Governing"
+s_1 = 20 * MPa
+s_2 = 30 * MPa
+if s_1 > s_2:
+    s_gov = s_1
+else:
+    s_gov = s_2
+''')
+    text = shown(doc.results["g"])
+    assert '"false"' in text and '"else"' in text
+    assert 's_"gov" = s_2 = 30 thin "MPa"' in text
