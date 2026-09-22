@@ -216,3 +216,46 @@ def test_controlled_blocks_are_not_linted_as_handcalcs():
 
     src = "from kip import *\n\n# %% kip.controlled id=c\nP = reqs.P_design\n"
     assert [d for d in validate_all(parse(src, "doc.py")) if d.severity == "error"] == []
+
+
+# --- workbooks ----------------------------------------------------------------
+
+def test_migrated_workbooks_flow_down_like_the_toml(tmp_path):
+    """kip migrate turns each item's TOML into input/requirements.xlsx, parents included."""
+    from kip.migrate import migrate
+    (tmp_path / "skid").mkdir()
+    (tmp_path / "lug").mkdir()
+    (tmp_path / "skid" / "requirements.toml").write_text(ASSEMBLY, encoding="utf-8")
+    (tmp_path / "lug" / "requirements.toml").write_text(COMPONENT, encoding="utf-8")
+    for folder in ("skid", "lug"):
+        migrate(tmp_path / folder)
+        assert (tmp_path / folder / "requirements.toml.bak").exists()
+    reqs = Requirements.load(tmp_path / "lug" / "input" / "requirements.xlsx")
+    assert reqs.item.id == "LUG-001" and reqs.parent.item.id == "SKID-4471"
+    assert reqs.P_design == 18 * ureg.kN
+    assert reqs.requirements["REQ-014"].controls == ["P_design", "sigma_y_min"]
+    assert reqs.requirements["REQ-014"].parent == "SKID-REQ-003"
+
+
+def test_a_workbook_without_item_or_variables_sheets_uses_the_folder_name(tmp_path):
+    from openpyxl import Workbook
+    book = Workbook()
+    book.active.title = "Inputs"
+    book.active.append(["id", "text", "verification"])
+    book.active.append(["REQ-1", "Carry the load.", None])
+    (tmp_path / "bracket" / "input").mkdir(parents=True)
+    book.save(tmp_path / "bracket" / "input" / "requirements.xlsx")
+    reqs = Requirements.load(tmp_path / "bracket" / "input" / "requirements.xlsx")
+    assert reqs.item.id == "bracket"
+    assert reqs.requirements["REQ-1"].verification == "analysis"
+
+
+def test_a_document_prefers_the_workbook_and_warns_about_toml(tmp_path):
+    (tmp_path / "requirements.toml").write_text(ASSEMBLY, encoding="utf-8")
+    source = "from kip import *\nreqs = Requirements.load()\n# %% controlled c\nP = reqs.P_design\n"
+    doc = build(path=tmp_path / "doc.py", source=source)
+    assert any("requirements.toml is an older form" in d.message for d in doc.warnings)
+    from kip.migrate import migrate
+    migrate(tmp_path)
+    doc = build(path=tmp_path / "doc.py", source=source)
+    assert not doc.warnings and doc.value("P") == 18 * ureg.kN

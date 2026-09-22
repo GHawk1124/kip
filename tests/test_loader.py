@@ -56,7 +56,7 @@ def test_round_trip_is_identity():
 
 @pytest.mark.parametrize("bad,message", [
     ("# %% kip.calc\nx = 1", "missing 'id='"),
-    ("# %% kip.bogus id=a\nx = 1", "unknown block kind"),
+    ("# %% kip.bogus id=a\nx = 1", "unknown cell kind"),
     ("# %% kip.calc id=a\nx=1\n# %% kip.calc id=a\ny=2", "duplicate block id"),
     ("# %% kip.calc id=9bad\nx = 1", "must be a valid identifier"),
 ])

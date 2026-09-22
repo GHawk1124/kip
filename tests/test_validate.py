@@ -59,7 +59,7 @@ def test_a_module_function_that_is_not_a_calculation_fails_at_run_time():
     from kip.doc import build
     doc = build(source="import math\n# %% calc b\nx = 4.0\n# %% calc c\nm = math.sqrt(x)\n",
                 path="doc.py", strict=False)
-    assert "method call '.sqrt()'" in doc.results["c"].error
+    assert "math.sqrt(...) did not return an @calculation result" in doc.results["c"].error
 
 
 def test_an_external_calculation_call_is_not_held_to_the_grammar():

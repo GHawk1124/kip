@@ -10,7 +10,7 @@ from .doc.extension import Extension, MissingInput, UnavailableInput
 from .doc.graph import analyze_code
 from .doc.loader import KipSyntaxError
 from .doc.validate import Diagnostic
-from .req import Item, Requirement, Requirements, requirements_table, variables_table, compliance_matrix
+from .req import Requirements, requirements_table, variables_table, compliance_matrix
 from .sheets import Constants, Sheet
 from .packet_config import PacketConfig, SHEETS, STAGES
 
@@ -155,10 +155,9 @@ class ComponentPacket(Extension):
         if toml.exists():
             reqs = Requirements.load(toml)
         elif xlsx.exists():
-            sheet = _sheet(self.root, spec)
-            reqs = Requirements(Item(self.root.name), {
-                str(r["id"]): Requirement(str(r["id"]), str(r["text"]), str(r["verification"])) for r in sheet
-            }, {}, path=xlsx)
+            reqs = Requirements.load(xlsx)
+            self.identity = reqs.item
+            _sheet(self.root, spec)  # the packet's header and required-cell checks
         else:
             raise UnavailableInput(f"Missing {self.config.requirements_file} or {spec.path}.")
         self.identity = reqs.item
@@ -329,7 +328,7 @@ def create_inputs(root):
     config = PacketConfig(root / "packet.toml")
     for name, spec in config.sheets.items():
         if name == "requirements":
-            continue  # The scaffold uses the TOML alternative.
+            continue  # written with its Item and Variables sheets by the scaffold
         if spec.path not in books:
             books[spec.path] = Workbook()
             books[spec.path].remove(books[spec.path].active)

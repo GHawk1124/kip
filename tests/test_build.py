@@ -288,7 +288,8 @@ def test_scaffolded_project_builds(tmp_path):
     target = tmp_path / "proj"
     assert runner.invoke(app, ["new", str(target), "--no-sync"]).exit_code == 0
     assert (target / "doc.py").exists()
-    assert (target / "layout.toml").exists()
+    assert (target / "input" / "references.xlsx").exists()
+    assert 'run_document(__file__, title="Proj")' in (target / "doc.py").read_text()
 
     doc = build(path=target / "doc.py")
     assert not doc.errors

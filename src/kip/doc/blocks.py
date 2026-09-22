@@ -58,6 +58,8 @@ class Block:
     body_start: int
     body_end: int
     meta: dict[str, str] = field(default_factory=dict)
+    #: older spellings found on the marker, reported as warnings
+    notes: list[str] = field(default_factory=list)
 
     # Populated by graph.analyze()
     defs: frozenset[str] = frozenset()

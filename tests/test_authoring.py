@@ -22,16 +22,28 @@ def test_shorthand_matches_legacy_execution_and_editing():
 # %% inputs loads "Applied loads"
 P = 2 * kN
 L = 100 * mm
-# %% calc moment "Moment" unit=kN*m
-M = P * L
+# %% calc moment "Moment"
+M = P * L  # -> kN*m
 '''
     doc = build(source=source)
     assert doc.value("M").magnitude == pytest.approx(0.2)
     assert not doc.warnings
     blocks = parse(source)
-    assert blocks[-1].meta == {"label": "Moment", "result_unit": "kN*m"}
-    edited = replace_body(source, blocks[-1], "M = P * L * 2")
+    assert blocks[-1].meta == {"label": "Moment"}
+    edited = replace_body(source, blocks[-1], "M = P * L * 2  # -> kN*m")
     assert build(source=edited).value("M").magnitude == pytest.approx(0.4)
+
+
+@pytest.mark.parametrize("marker,advice", [
+    ("# %% kip.calc id=m", "# %% calc <id>"),
+    ("# %% given m", "now written 'inputs'"),
+    ("# %% calculation m", "now written 'calc'"),
+    ("# %% calc m unit=MPa", "# -> MPa"),
+])
+def test_older_marker_forms_still_work_and_warn(marker, advice):
+    doc = build(source=f"from kip import *\n{marker}\nx = 2 * MPa\n", strict=False)
+    assert doc.value("x") is not None
+    assert any(advice in d.message for d in doc.warnings), [d.message for d in doc.warnings]
 
 
 def test_shorthand_bad_quotes_have_source_location():
@@ -47,14 +59,14 @@ def test_title_only_markers_preserve_labels_references_and_editing():
 # %% inputs "Loads"
 P = 2 * kN
 L = 100 * mm
-# %% calc "Bending moment" unit=kN*m
-M = P * L
+# %% calc "Bending moment"
+M = P * L  # -> kN*m
 '''
     document = build(source=source)
     assert not document.warnings
     assert [b.id for b in document.ordered_blocks()] == ["scope", "loads", "bending_moment"]
     assert document.blocks[-1].meta["label"] == "Bending moment"
-    edited = replace_body(source, document.blocks[-1], "M = 2 * P * L")
+    edited = replace_body(source, document.blocks[-1], "M = 2 * P * L  # -> kN*m")
     assert build(source=edited).value("M").to("kN*m").magnitude == pytest.approx(.4)
     assert parse('# %% text "3D geometry"')[0].id == "text_3d_geometry"
     assert parse('# %% text "Scope" id=stable')[0].id == "stable"

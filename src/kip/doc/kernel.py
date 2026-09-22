@@ -234,6 +234,17 @@ def _waiting(block: Block, ns: dict, graph: DependencyGraph,
     return None
 
 
+def _report_notes(doc, block) -> None:
+    """Deprecations raised while ``block`` ran become document warnings."""
+    from .context import current
+    ctx = current()
+    if ctx is None:
+        return
+    for note in ctx.notes:
+        if not any(d.message == note for d in doc.diagnostics):
+            doc.diagnostics.append(Diagnostic("warning", block.id, block.body_start, note))
+
+
 def _execute_ordered(doc, ns):
     results: dict[str, BlockResult] = {}
     doc.results = results
@@ -244,6 +255,7 @@ def _execute_ordered(doc, ns):
             results[bid] = BlockResult(bid, block.kind, state="BLOCKED", reason=reason)
             continue
         results[bid] = _run_block(block, ns, draft=doc.draft)
+        _report_notes(doc, block)
 
     # Presentation-only requests can precede the quantities they describe.
     quantities = [item for block in doc.ordered_blocks()
@@ -361,8 +373,17 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
         calculations = [v for v in res.values.values() if isinstance(v, Calculation)]
         if isinstance(expression, Calculation):
             calculations = [expression]
-        if block.kind == "calculation" and not calculations:
-            raise CalcRenderError("calculation cell must return or bind a @calculation result")
+        if not calculations and block.kind in ("calc", "calculation") and block.source.strip():
+            import ast
+            from ..math.calc import is_external_call
+            tree = ast.parse(block.source)
+            if is_external_call(tree):
+                call = tree.body[0].value
+                name = f"{call.func.value.id}.{call.func.attr}"
+                raise CalcRenderError(
+                    f"{name}(...) did not return an @calculation result; decorate "
+                    "that function with @calculation, or for plain arithmetic call "
+                    "bare function names such as sqrt(x)")
         if block.kind in ("calc", "calculation") and calculations:
             if len(calculations) != 1:
                 raise CalcRenderError("bind one decorated calculation per cell")
@@ -532,6 +553,8 @@ def build(
     provided = default_provided().union(*(e.provided for e in extensions))
     graph = analyze(blocks, provided=provided)
     diags = validate_all(blocks, p)
+    diags.extend(Diagnostic("warning", b.id, b.marker_line, note)
+                 for b in blocks for note in b.notes)
     diags.extend(_citation_diagnostics(blocks, p))
     diags.extend(_early_use_diagnostics(blocks, graph))
     from .validate import unit_diagnostics

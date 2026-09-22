@@ -387,6 +387,23 @@ def watch(
 
 
 @app.command()
+def migrate(
+    path: Path = typer.Argument(Path("."), help="Project folder (default: here)."),
+) -> None:
+    """Convert requirements.toml and sources.toml into input/ workbooks."""
+    from .migrate import migrate as convert
+
+    try:
+        done = convert(Path(path))
+    except (OSError, ValueError) as e:
+        _fail(str(e))
+    if not done:
+        console.print("nothing to migrate")
+    for old, new in done:
+        console.print(f"[green]wrote[/green] {new}  (kept {old.name}.bak)")
+
+
+@app.command()
 def version() -> None:
     """Print versions of kip and its rendering toolchain."""
     from . import __version__

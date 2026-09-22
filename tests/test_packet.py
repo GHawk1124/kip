@@ -432,9 +432,10 @@ def test_new_cli_can_set_two_column_default(tmp_path):
     root = tmp_path / "two-column"
     result = CliRunner().invoke(app, ["new", str(root), "--template", "component", "--columns", "2", "--no-sync"])
     assert result.exit_code == 0, result.output
-    assert Layout.load(root / "layout.toml").page.columns == 2
+    assert "run_document(__file__, title=\"Two Column\", columns=2)" in (root / "doc.py").read_text()
+    assert not (root / "layout.toml").exists()
     doc = build(root / "doc.py")
-    pdf = pymupdf.open(stream=compile_pdf(emit(doc, Layout.load(root / "layout.toml"))))
+    pdf = pymupdf.open(stream=compile_pdf(emit(doc)))
     assert "4 Preliminary Analysis" in "".join(p.get_text() for p in pdf)
 
 

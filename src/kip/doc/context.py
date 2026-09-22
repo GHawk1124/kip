@@ -13,13 +13,15 @@ import builtins
 import importlib.util
 import itertools
 import sys
+import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 
-__all__ = ["BuildContext", "current", "document_dir", "project_path", "building"]
+__all__ = ["BuildContext", "current", "document_dir", "project_path", "building",
+           "deprecated", "KipDeprecationWarning"]
 
 _CURRENT: ContextVar["BuildContext | None"] = ContextVar("kip_build", default=None)
 _SERIAL = itertools.count(1)
@@ -31,6 +33,8 @@ class BuildContext:
 
     root: Path | None
     modules: dict[str, ModuleType] = field(default_factory=dict)
+    #: deprecation notes raised while cells ran, reported as warnings
+    notes: list[str] = field(default_factory=list)
     serial: int = field(default_factory=lambda: next(_SERIAL))
 
     def local_module(self, name: str) -> ModuleType | None:
@@ -76,6 +80,20 @@ class BuildContext:
         for name in list(sys.modules):
             if name.startswith(f"_kip_build_{self.serial}."):
                 del sys.modules[name]
+
+
+class KipDeprecationWarning(UserWarning):
+    """An older way of writing something that kip still accepts."""
+
+
+def deprecated(message: str) -> None:
+    """Report an older form: a document warning during a build, else a Python warning."""
+    ctx = _CURRENT.get()
+    if ctx is not None:
+        if message not in ctx.notes:
+            ctx.notes.append(message)
+    else:
+        warnings.warn(message, KipDeprecationWarning, stacklevel=3)
 
 
 def current() -> BuildContext | None:

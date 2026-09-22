@@ -408,21 +408,28 @@ class Sources(dict):
 
     @classmethod
     def load(cls, *paths):
-        """Merge reference files, later ones winning, in one call.
+        """Merge reference workbooks, later ones winning, in one call.
 
-        A ``.toml`` file holds ``[sources.key]`` tables; a ``.xlsx`` sheet holds
-        ``key``, ``title``, ``url`` and ``note`` columns, so supplier and
-        catalogue references stay editable in the workbook they came from.
+        With no argument this reads ``input/references.xlsx``: one row per
+        reference with ``key``, ``title``, ``author``, ``publisher``, ``year``,
+        ``section``, ``url`` and ``note`` columns. An older ``sources.toml``
+        of ``[sources.key]`` tables still loads (``kip migrate`` converts it).
         """
         import tomllib
         from .authoring import project_path
+        from .doc.context import deprecated
+        if not paths:
+            defaults = ("input/references.xlsx", "sources.toml")
+            paths = (next((p for p in defaults if project_path(p).exists()), defaults[0]),)
         merged: dict[str, Source] = {}
-        for path in (paths or ("sources.toml",)):
+        for path in paths:
             resolved = project_path(path)
             if resolved.suffix.lower() in (".xlsx", ".xlsm"):
                 from .sheets import Sheet
                 merged.update(Sheet.load(resolved).sources())
                 continue
+            deprecated(f"{resolved.name} is an older form; references live in "
+                       "input/references.xlsx (run kip migrate to convert it)")
             with resolved.open("rb") as stream:
                 data = tomllib.load(stream)
             merged.update(cls(data.get("sources", {})))

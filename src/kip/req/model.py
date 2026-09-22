@@ -9,25 +9,18 @@ That is what makes the flow-down real. A component's document does not restate
 "the design load is 18 kN"; it reads ``reqs.P_design`` from the assembly that
 levies the requirement, so changing the assembly changes every child document.
 
-``requirements.toml``::
+They live in ``input/requirements.xlsx``, one sheet per kind of row:
 
-    [item]
-    id = "LUG-001"
-    name = "Lift Lug"
-    kind = "component"
-    parent_file = "../skid/requirements.toml"
+``Item``       one row: id, name, kind, revision, parent, parent_file, description
+``Variables``  name, value, unit, description, source
+``Inputs``     id, text, verification, parent, controls, rationale, note
 
-    [vars.P_design]
-    value = 18.0
-    unit = "kN"
-    description = "Design lift load"
-    source = "REQ-014"
-
-    [req.REQ-014]
-    text = "The lug shall carry P_design with a design factor of DF_min."
-    verification = "analysis"
-    controls = ["P_design", "DF_min"]
-    parent = "SKID-REQ-003"
+``Item`` and ``Variables`` are optional; the item id then defaults to the
+project folder's name. ``controls`` lists variable names separated by commas,
+and ``parent_file`` names the parent item's workbook relative to this
+project's folder (``../skid/input/requirements.xlsx``).
+An older ``requirements.toml`` with ``[item]``, ``[vars.*]`` and ``[req.*]``
+tables still loads; ``kip migrate`` converts it.
 """
 
 from __future__ import annotations
@@ -190,6 +183,68 @@ def evaluate(value, criterion: str, variables: dict[str, ControlledVar] | None =
         ) from e
     return passed, fmt_quantity(bound)
 
+# workbooks
+
+#: Where a project's requirements are looked for, in order.
+REQUIREMENTS_FILES = ("input/requirements.xlsx", "requirements.toml")
+
+ITEM_COLUMNS = ("id", "name", "kind", "revision", "parent", "parent_file", "description")
+VARIABLE_COLUMNS = ("name", "value", "unit", "description", "source")
+REQUIREMENT_COLUMNS = ("id", "text", "verification", "parent", "controls", "rationale", "note")
+
+
+def _cell(value):
+    """A blank cell is absent, not an empty string."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return value.strip() if isinstance(value, str) else value
+
+
+def workbook_data(path: Path) -> dict:
+    """Read a requirements workbook into the same shape as the TOML tables."""
+    from openpyxl import load_workbook
+    from ..authoring import read_records
+
+    book = load_workbook(path, read_only=True)
+    try:
+        sheets = set(book.sheetnames)
+    finally:
+        book.close()
+    if "Inputs" not in sheets:
+        raise RequirementsError(f"{path}: expected an 'Inputs' sheet of requirements")
+
+    def rows(sheet, required):
+        if sheet not in sheets:
+            return []
+        records = read_records(path, sheet)
+        for n, record in enumerate(records, start=2):
+            for column in required:
+                if _cell(record.get(column)) is None:
+                    raise RequirementsError(f"{path} / {sheet} row {n}: {column} is blank")
+        return [{k: _cell(v) for k, v in record.items()} for record in records]
+
+    items = rows("Item", ("id",))
+    if len(items) > 1:
+        raise RequirementsError(f"{path} / Item: expected one row, found {len(items)}")
+    folder = path.parent.parent if path.parent.name == "input" else path.parent
+    item = {k: v for k, v in (items[0] if items else {"id": folder.name}).items() if v is not None}
+    data: dict = {"item": item, "vars": {}, "req": {}}
+    for row in rows("Variables", ("name", "value")):
+        name = str(row["name"])
+        if name in data["vars"]:
+            raise RequirementsError(f"{path} / Variables: {name} appears twice")
+        data["vars"][name] = {k: v for k, v in row.items() if k != "name" and v is not None}
+    for row in rows("Inputs", ("id", "text")):
+        rid = str(row["id"])
+        if rid in data["req"]:
+            raise RequirementsError(f"{path} / Inputs: {rid} appears twice")
+        entry = {k: v for k, v in row.items() if k != "id" and v is not None}
+        if "controls" in entry:
+            entry["controls"] = [c.strip() for c in str(entry["controls"]).split(",") if c.strip()]
+        data["req"][rid] = entry
+    return data
+
+
 # container
 
 
@@ -215,8 +270,12 @@ class Requirements:
 
     # -- loading ---------------------------------------------------------
     @classmethod
-    def load(cls, path: str | Path = "requirements.toml", _seen: set[Path] | None = None
+    def load(cls, path: str | Path | None = None, _seen: set[Path] | None = None
              ) -> "Requirements":
+        """Load ``input/requirements.xlsx`` (or an older ``requirements.toml``)."""
+        if path is None:
+            path = next((c for c in REQUIREMENTS_FILES if _resolve(c).exists()),
+                        REQUIREMENTS_FILES[0])
         p = _resolve(path)
         _seen = _seen or set()
         if p in _seen:
@@ -224,6 +283,11 @@ class Requirements:
         _seen.add(p)
         if not p.exists():
             raise RequirementsError(f"no requirements file at {p}")
+        if p.suffix.lower() in (".xlsx", ".xlsm"):
+            return cls._from_dict(workbook_data(p), p, _seen)
+        from ..doc.context import deprecated
+        deprecated(f"{p.name} is an older form; requirements live in "
+                   "input/requirements.xlsx (run kip migrate to convert it)")
         return cls._from_dict(tomllib.loads(p.read_text(encoding="utf-8")), p, _seen)
 
     @classmethod
@@ -247,7 +311,10 @@ class Requirements:
 
         parent = None
         if item.parent_file and path is not None:
-            parent = cls.load((path.parent / item.parent_file), _seen=seen)
+            # relative to the project folder, which for a workbook is above input/
+            base = path.parent.parent if (path.suffix.lower() != ".toml"
+                                          and path.parent.name == "input") else path.parent
+            parent = cls.load((base / item.parent_file), _seen=seen)
 
         variables: dict[str, ControlledVar] = {}
         for name, raw in (data.get("vars", {}) or {}).items():
@@ -264,7 +331,8 @@ class Requirements:
         requirements: dict[str, Requirement] = {}
         for rid, raw in (data.get("req", {}) or {}).items():
             raw = dict(raw)
-            if "text" not in raw:
+            raw["text"] = str(raw.get("text", "")) if "text" in raw else None
+            if raw["text"] is None:
                 raise RequirementsError(f"[req.{rid}] needs 'text'")
             requirements[rid] = Requirement(
                 id=rid, text=raw["text"],
