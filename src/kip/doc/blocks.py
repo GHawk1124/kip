@@ -62,6 +62,8 @@ class Block:
     # Populated by graph.analyze()
     defs: frozenset[str] = frozenset()
     refs: frozenset[str] = frozenset()
+    #: refs read while the cell runs (not later, inside a function body)
+    eager: frozenset[str] = frozenset()
     cites: tuple[tuple[str, str], ...] = ()
 
     @property

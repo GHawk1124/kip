@@ -8,11 +8,7 @@ import inspect
 from pathlib import Path
 import textwrap
 
-
-def project_path(path):
-    from .req import model
-    p = Path(path)
-    return p if p.is_absolute() else (model._DOC_DIR or Path.cwd()) / p
+from .doc.context import project_path  # re-exported: loaders resolve paths here
 
 
 def read_records(path, sheet="Inputs"):
@@ -110,7 +106,7 @@ def _equation_source(fn):
                 f"{fn.__name__}: a calculation returns nothing, or returns locals()")
     start = marker + 1 if marker is not None else function.body[0].lineno - 1
     end = function.body[-1].lineno - 1 if returns else len(lines)
-    return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns
+    return tree, function, textwrap.dedent("\n".join(lines[start:end])), returns, start
 
 
 def calculation(fn=None, *, units=None, precision=3):
@@ -135,7 +131,9 @@ def calculation(fn=None, *, units=None, precision=3):
     """
     def decorate(fn):
         from .math.calc import display_units
-        tree, function, raw, returns = _equation_source(fn)
+        tree, function, raw, returns, start = _equation_source(fn)
+        # Line numbers are reported against the author's file, not the snippet.
+        first_line = inspect.getsourcelines(fn)[1]
         full_source = textwrap.dedent(inspect.getsource(fn))
         signature = inspect.signature(fn)
         equations, annotated = display_units(raw)
@@ -144,8 +142,10 @@ def calculation(fn=None, *, units=None, precision=3):
         from .doc.blocks import Block
         from .doc.validate import validate_all, ValidationError
         path = inspect.getsourcefile(fn)
-        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=0,
-                      body_start=1, body_end=len(equations.splitlines()))
+        body_start = first_line + start
+        block = Block(id=fn.__name__, kind="calc", source=equations, marker_line=body_start - 1,
+                      body_start=body_start,
+                      body_end=body_start + len(equations.splitlines()) - 1)
         errors = [d for d in validate_all([block], path) if d.severity == "error"]
         if errors:
             raise ValidationError(errors, path)
@@ -158,6 +158,7 @@ def calculation(fn=None, *, units=None, precision=3):
                 func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[])))
             module = ast.fix_missing_locations(
                 ast.Module(body=[function], type_ignores=[]))
+            ast.increment_lineno(module, first_line - 1)
             scope: dict = {}
             exec(compile(module, path or "<calculation>", "exec"),
                  fn.__globals__, scope)

@@ -1,11 +1,10 @@
 import pytest
 
-from kip.doc.graph import CycleError, analyze, analyze_code, analyze_text
+from kip.doc.graph import analyze, analyze_code, analyze_text
 from kip.doc.loader import parse
 
 
-def test_execution_order_follows_dependencies_not_document_order():
-    """The defining property: a block may be written before its inputs."""
+def test_calculations_run_top_to_bottom_and_an_early_read_is_reported():
     src = '''from kip import *
 
 # %% kip.calc id=result
@@ -17,7 +16,50 @@ c = 25 * mm
 I = 4e6 * mm**4
 '''
     g = analyze(parse(src, "doc.py"))
-    assert g.order.index("inputs") < g.order.index("result")
+    assert g.order == ["__prelude__", "result", "inputs"]
+    assert dict(g.early["result"]) == {"I": "inputs", "M": "inputs", "c": "inputs"}
+
+
+def test_presentation_runs_after_every_calculation():
+    src = '''from kip import *
+
+# %% kip.table id=summary
+Table.from_records([{"x": x}])
+
+# %% kip.calc id=calc
+x = 2 * mm
+
+# %% kip.text id=note
+"""x is @val:x"""
+'''
+    g = analyze(parse(src, "doc.py"))
+    assert g.order == ["__prelude__", "calc", "summary", "note"]
+    assert not g.early["summary"]
+    assert "calc" in g.edges["summary"]
+
+
+def test_a_read_inside_a_function_body_is_not_early():
+    src = '''def later_value():
+    return y
+
+# %% kip.calc id=a
+y = 2
+'''
+    g = analyze(parse(src, "doc.py"))
+    assert not g.early["__prelude__"]
+
+
+def test_a_later_redefinition_does_not_change_an_earlier_reader():
+    src = '''from kip import *
+# %% kip.given id=a
+x = 1 * mm
+# %% kip.calc id=b
+y = x * 2
+# %% kip.given id=c
+x_new = 3 * mm
+'''
+    g = analyze(parse(src, "doc.py"))
+    assert g.edges["b"] == frozenset({"__prelude__", "a"})
 
 
 def test_edges_and_producers():
@@ -35,7 +77,7 @@ y = x * 2
     assert g.descendants("a") == {"b"}
 
 
-def test_cycle_is_a_hard_error_naming_the_blocks():
+def test_mutual_references_are_an_early_read_not_a_cycle():
     src = '''from kip import *
 
 # %% kip.calc id=a
@@ -44,9 +86,9 @@ x = y + 1
 # %% kip.calc id=b
 y = x + 1
 '''
-    with pytest.raises(CycleError) as exc:
-        analyze(parse(src, "doc.py"))
-    assert "a" in str(exc.value) and "b" in str(exc.value)
+    g = analyze(parse(src, "doc.py"))
+    assert g.early["a"] == (("y", "b"),)
+    assert "a" in g.edges["b"]
 
 
 def test_unresolved_names_are_reported():
@@ -104,3 +146,4 @@ sigma = 2 * MPa
 '''
     g = analyze(parse(src, "doc.py"))
     assert g.order.index("calc") < g.order.index("summary")
+    assert "calc" in g.edges["summary"]

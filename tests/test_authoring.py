@@ -146,7 +146,7 @@ def test_record_table_and_generator_plot():
         Table.from_records([{"a": 1}, {"b": 2}])
 
 
-def test_inputs_named_like_exported_units_are_visible_and_cached():
+def test_inputs_named_like_exported_units_are_visible_and_rerun():
     from kip.doc.kernel import execute
 
     document = build(source='''from kip import *
@@ -159,9 +159,8 @@ L = 100 * mm
     pdf = pymupdf.open(stream=compile_pdf(emit(document)), filetype="pdf")
     text = "".join(page.get_text() for page in pdf)
     assert "200" in text and "100" in text and "GEOMETRY" in text
-    previous = document.results
     document.namespace = {}
-    execute(document, previous=previous)
+    execute(document)
     assert document.value("A").magnitude == 200
     assert document.value("L").magnitude == 100
 

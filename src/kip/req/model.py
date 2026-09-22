@@ -33,7 +33,6 @@ levies the requirement, so changing the assembly changes every child document.
 from __future__ import annotations
 
 import tomllib
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,32 +41,12 @@ from ..units import fmt_quantity, ureg
 __all__ = [
     "ControlledVar", "Requirement", "Item", "Check", "Requirements",
     "VERIFICATION_METHODS", "ITEM_KINDS", "RequirementsError",
-    "document_dir",
 ]
 
-#: Directory of the document being executed. Relative paths in a document
-#: resolve against it, so `Requirements.load("requirements.toml")` means "next
-#: to this doc.py" regardless of the working directory the build ran from.
-_DOC_DIR: Path | None = None
-
-
-@contextmanager
-def document_dir(path: "Path | str | None"):
-    """Resolve relative requirement paths against ``path`` for the duration."""
-    global _DOC_DIR
-    previous = _DOC_DIR
-    _DOC_DIR = Path(path).resolve() if path is not None else None
-    try:
-        yield
-    finally:
-        _DOC_DIR = previous
-
-
 def _resolve(path: "str | Path") -> Path:
-    p = Path(path)
-    if p.is_absolute() or _DOC_DIR is None:
-        return p.resolve()
-    return (_DOC_DIR / p).resolve()
+    """Relative paths mean "next to this doc.py", whatever the working directory."""
+    from ..doc.context import project_path
+    return project_path(path).resolve()
 
 #: Standard verification methods (as used in systems engineering practice).
 VERIFICATION_METHODS = ("analysis", "test", "inspection", "demonstration",

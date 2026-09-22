@@ -19,13 +19,13 @@ DOC = '''from kip import *
 # %% kip.text id=intro
 """Peak stress is @val:sigma_max, see @blk:calc1."""
 
-# %% kip.calc id=calc1 result_unit=MPa
-sigma_max = M * c / I
-
 # %% kip.given id=inputs
 M = 0.75 * kN * m
 c = 20 * mm
 I = 133333.333 * mm**4
+
+# %% kip.calc id=calc1 result_unit=MPa
+sigma_max = M * c / I
 '''
 
 
@@ -62,13 +62,13 @@ sigma = (M / W).to(MPa)
 def test_result_unit_accepts_a_per_name_mapping():
     src = '''from kip import *
 
-# %% kip.calc id=sec result_unit="I_xx=mm**4, c_out=mm"
-I_xx = b * h**3 / 12
-c_out = h / 2
-
 # %% kip.given id=g
 b = 25 * mm
 h = 40 * mm
+
+# %% kip.calc id=sec result_unit="I_xx=mm**4, c_out=mm"
+I_xx = b * h**3 / 12
+c_out = h / 2
 '''
     doc = build(source=src, path="doc.py")
     assert doc.value("I_xx").units == ureg.mm ** 4
@@ -95,12 +95,12 @@ def test_dimensionless_values_have_no_trailing_unit():
 # %% kip.text id=t
 """Margin @val:MS."""
 
-# %% kip.calc id=c
-MS = a / b - 1
-
 # %% kip.given id=g
 a = 184 * MPa
 b = 112.5 * MPa
+
+# %% kip.calc id=c
+MS = a / b - 1
 '''
     doc = build(source=src, path="doc.py")
     pdf = pymupdf.open(stream=compile_pdf(emit(doc)), filetype="pdf")
@@ -111,6 +111,53 @@ def test_failed_block_does_not_abort_non_strict_build():
     src = DOC.replace("I = 133333.333 * mm**4", "I = 0 * mm**4")
     doc = build(source=src, path="doc.py", strict=False)
     assert any(r.failed for r in doc.results.values())
+
+
+def test_a_failure_blocks_its_dependents_instead_of_cascading():
+    doc = build(source='''from kip import *
+# %% given a
+x = 1 * mm
+# %% calc b
+y = x / (x - x)
+# %% calc c
+z = y * 2
+# %% text d
+"""z is @val:z"""
+''', path="doc.py", strict=False)
+    assert doc.results["b"].failed
+    assert doc.results["c"].state == "BLOCKED" and not doc.results["c"].failed
+    assert doc.results["c"].reason == "Waiting on b, which failed."
+
+
+def test_a_calculation_reading_a_later_value_is_reported_before_running():
+    from kip.doc.validate import ValidationError
+    with pytest.raises(ValidationError) as exc:
+        build(source='''from kip import *
+# %% calc b
+y = x * 2
+# %% given a
+x = 1 * mm
+''', path="doc.py")
+    assert "'x' is used before it is defined; cell 'a'" in str(exc.value)
+
+
+def test_a_failure_names_the_line_in_the_authors_module(tmp_path):
+    from kip.doc.kernel import where
+    (tmp_path / "analysis.py").write_text('''from kip import *
+
+
+@calculation
+def moment(P, L):
+    # equations
+    M = P * L
+    Z = M / (L - L)
+''')
+    doc = build(source='''from kip import *
+import analysis
+# %% calc bending "Bending"
+analysis.moment(2 * kN, 100 * mm)
+''', path=tmp_path / "doc.py", strict=False)
+    assert where(doc.results["bending"]) == f"{tmp_path / 'analysis.py'}:8"
 
 
 # --- rendering --------------------------------------------------------------
@@ -301,3 +348,35 @@ else:
     text = shown(doc.results["g"])
     assert '"false"' in text and '"else"' in text
     assert 's_"gov" = s_2 = 30 thin "MPa"' in text
+
+
+def test_calculation_validation_errors_name_the_line_in_the_authors_file(tmp_path):
+    import importlib.util
+    from kip.doc.validate import ValidationError
+    path = tmp_path / "bad_analysis.py"
+    path.write_text('''from kip import *
+
+
+@calculation
+def moment(P, L):
+    # equations
+    M = P * L
+    Z = M if P else L
+''')
+    spec = importlib.util.spec_from_file_location("bad_analysis", path)
+    with pytest.raises(ValidationError) as exc:
+        spec.loader.exec_module(importlib.util.module_from_spec(spec))
+    assert exc.value.diagnostics[0].line == 8
+
+
+def test_two_documents_import_their_own_analysis_modules(tmp_path):
+    for name, factor in (("one", 2), ("two", 3)):
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "analysis.py").write_text(f"FACTOR = {factor}\n")
+        (folder / "doc.py").write_text(
+            "import analysis\n# %% calc c\ny = analysis.FACTOR * 1.0\n")
+    import sys
+    assert build(path=tmp_path / "one" / "doc.py").value("y") == 2
+    assert build(path=tmp_path / "two" / "doc.py").value("y") == 3
+    assert "analysis" not in sys.modules

@@ -664,11 +664,9 @@ def emit(doc: Document, layout: Layout | None = None,
         layout = replace(layout, page=replace(layout.page, **reports[0].page))
     page = layout.page
 
-    if doc.packet is not None and doc.packet.identity is not None:
-        item = doc.packet.identity
-        page = replace(page, title=page.title or item.name or item.id,
-                       document=page.document or item.id, revision=page.revision or item.revision)
-        layout = replace(layout, page=page)
+    for extension in doc.extensions:
+        page = extension.page(page)
+    layout = replace(layout, page=page)
 
     tf = page.title_fields()
     fields = ("(" + ", ".join(f"({_s(k)}, {_s(v)})" for k, v in tf) + ",)"

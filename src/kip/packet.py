@@ -6,27 +6,13 @@ from pathlib import Path
 
 from .content import Column, Sources, Table
 from .doc.blocks import Block
+from .doc.extension import Extension, MissingInput, UnavailableInput
 from .doc.graph import analyze_code
 from .doc.loader import KipSyntaxError
 from .doc.validate import Diagnostic
 from .req import Item, Requirement, Requirements, requirements_table, variables_table, compliance_matrix
 from .sheets import Constants, Sheet
 from .packet_config import PacketConfig, SHEETS, STAGES
-
-
-class UnavailableInput(Exception):
-    """A declared input is absent; it is not a Python or schema error."""
-
-
-class MissingInput:
-    def __init__(self, reason):
-        self.reason = reason
-
-    def __getattr__(self, name):
-        raise UnavailableInput(self.reason)
-
-    def __getitem__(self, key):
-        raise UnavailableInput(self.reason)
 
 
 @dataclass
@@ -70,13 +56,19 @@ def _sheet(root, spec):
     return table
 
 
-class ComponentPacket:
+class ComponentPacket(Extension):
+    """``# %% packet component``: ordered sections, known sheets, visible gaps."""
+
+    draft = True
+
     def __init__(self, blocks, path):
         declarations = [b for b in blocks if b.kind == "packet"]
         marker = self.marker = declarations[0]
         self.path = Path(path)
         self.root = self.path.resolve().parent
         self.authored = [b for b in blocks if b.kind != "packet"]
+        super().__init__(self.authored)
+        self.identity = None
         self.materials = {}
         self.status = {}
         if len(declarations) != 1 or marker.id != "component" or marker.source.strip():
@@ -96,6 +88,7 @@ class ComponentPacket:
         if self.na - self.sections.keys():
             self.error("na= sections must appear in the packet order")
         reserved = {alias for alias, name in (("C", "constants"), ("reqs", "requirements")) if name in self.sheets}
+        self.provided = frozenset(reserved)
         for block in self.authored:
             if block.id.startswith("_packet_"):
                 self.error("block ids beginning _packet_ are reserved")
@@ -302,6 +295,15 @@ class ComponentPacket:
             if any(doc.results[b.id].state == "BLOCKED" or doc.results[b.id].failed for b in work):
                 return "BLOCKED", "Verification work could not complete."
             return status
+
+    def page(self, spec):
+        """Title, document number and revision default to the item's identity."""
+        from dataclasses import replace
+        item = self.identity
+        if item is None:
+            return spec
+        return replace(spec, title=spec.title or item.name or item.id,
+                       document=spec.document or item.id, revision=spec.revision or item.revision)
 
     @property
     def outstanding(self):

@@ -84,7 +84,7 @@ known = 2 + 2
     assert doc.results["inputs"].state == "BLOCKED"
     assert doc.results["independent_check"].values["known"] == 4
     populated(tmp_path)
-    execute(doc, previous=doc.results)
+    execute(doc)
     assert doc.results["initial_sizing"].state == "PRESENT"
     assert doc.namespace["result"].twice.magnitude == 24
     assert doc.packet.status["inputs"][0] == "PRESENT"
@@ -92,7 +92,7 @@ known = 2 + 2
     book.active["B2"] = 15
     book.save(tmp_path / "input/constants.xlsx")
     book.close()
-    execute(doc, previous=doc.results)
+    execute(doc)
     assert doc.namespace["result"].twice.magnitude == 30
 
 
