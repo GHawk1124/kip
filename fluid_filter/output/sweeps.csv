@@ -1,0 +1,84 @@
+driver,series,x,x_axis,y,y_axis,basis
+mass_flow,200 x 1400,0.0,Mass flow (lb/s),0.0,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.07,Mass flow (lb/s),0.09450750103175568,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.14,Mass flow (lb/s),0.19389725208049405,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.235,Mass flow (lb/s),0.33659245187278214,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.35,Mass flow (lb/s),0.5213600053286053,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.47,Mass flow (lb/s),0.7282098541920682,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 1400,0.6,Mass flow (lb/s),0.9684883257212213,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.0,Mass flow (lb/s),0.0,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.07,Mass flow (lb/s),0.050612839549817046,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.14,Mass flow (lb/s),0.10484260125185227,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.235,Mass flow (lb/s),0.18422536506543274,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.35,Mass flow (lb/s),0.2892334192712671,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.47,Mass flow (lb/s),0.40921491908112057,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,165 x 1400,0.6,Mass flow (lb/s),0.5511897721010222,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.0,Mass flow (lb/s),0.0,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.07,Mass flow (lb/s),0.00946164191376806,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.14,Mass flow (lb/s),0.019402655364485,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.235,Mass flow (lb/s),0.03366078064368999,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.35,Mass flow (lb/s),0.05210192493832907,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.47,Mass flow (lb/s),0.07272427417064564,Screen loss (psi),Sensitivity / local screen; not qualification
+mass_flow,200 x 600,0.6,Mass flow (lb/s),0.09665490505165919,Screen loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Nominal, K=3",0.1875,OD (in),9.57873629396637,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Nominal, K=3",0.25,OD (in),2.139927338866602,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Nominal, K=3",0.3125,OD (in),0.7211104327927234,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Nominal, K=3",0.375,OD (in),0.3068919988795071,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Surge, K=3",0.1875,OD (in),107.95626772128419,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Surge, K=3",0.25,OD (in),24.117854548756746,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Surge, K=3",0.3125,OD (in),8.127208908362887,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_od,"Surge, K=3",0.375,OD (in),3.4587980894124026,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Nominal, K=3",0.02,Wall (in),1.7605235175603604,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Nominal, K=3",0.025,Wall (in),2.139927338866602,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Nominal, K=3",0.03,Wall (in),2.627269390341206,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Nominal, K=3",0.04,Wall (in),4.099428577467421,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Surge, K=3",0.02,Wall (in),19.84181862393283,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Surge, K=3",0.025,Wall (in),24.117854548756746,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Surge, K=3",0.03,Wall (in),29.610398383998582,Housing loss (psi),Sensitivity / local screen; not qualification
+stub_wall,"Surge, K=3",0.04,Wall (in),46.2022333042119,Housing loss (psi),Sensitivity / local screen; not qualification
+pressure_factor,Stub proof,0.5,Specified pressure multiplier,0.07840752989348876,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub proof,0.75,Specified pressure multiplier,0.11761129484023314,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub proof,1.0,Specified pressure multiplier,0.15681505978697752,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub proof,1.25,Specified pressure multiplier,0.1960188247337219,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub proof,1.5,Specified pressure multiplier,0.23522258968046628,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub burst,0.5,Specified pressure multiplier,0.12499751142440237,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub burst,0.75,Specified pressure multiplier,0.18749626713660356,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub burst,1.0,Specified pressure multiplier,0.24999502284880473,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub burst,1.25,Specified pressure multiplier,0.3124937785610059,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Stub burst,1.5,Specified pressure multiplier,0.3749925342732071,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim proof,0.5,Specified pressure multiplier,0.19886499970643648,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim proof,0.75,Specified pressure multiplier,0.29829749955965473,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim proof,1.0,Specified pressure multiplier,0.39772999941287296,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim proof,1.25,Specified pressure multiplier,0.4971624992660912,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim proof,1.5,Specified pressure multiplier,0.5965949991193095,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim burst,0.5,Specified pressure multiplier,0.31703115895229,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim burst,0.75,Specified pressure multiplier,0.47554673842843503,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim burst,1.0,Specified pressure multiplier,0.63406231790458,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim burst,1.25,Specified pressure multiplier,0.792577897380725,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Rim burst,1.5,Specified pressure multiplier,0.9510934768568701,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Strength,0.5,Specified pressure multiplier,1.0,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Strength,0.75,Specified pressure multiplier,1.0,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Strength,1.0,Specified pressure multiplier,1.0,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Strength,1.25,Specified pressure multiplier,1.0,VM stress / strength,Sensitivity / local screen; not qualification
+pressure_factor,Strength,1.5,Specified pressure multiplier,1.0,VM stress / strength,Sensitivity / local screen; not qualification
+blockage,Nominal,0.0,Blocked face fraction,0.19389725208049405,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Nominal,0.25,Blocked face fraction,0.26286944723353217,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Nominal,0.5,Blocked face fraction,0.40732350422891883,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Nominal,0.75,Blocked face fraction,0.8927630087295606,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Surge,0.0,Blocked face fraction,0.7282098541920682,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Surge,0.25,Blocked face fraction,1.0198575393196498,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Surge,0.5,Blocked face fraction,1.6765195101701516,Screen loss (psi),Sensitivity / local screen; not qualification
+blockage,Surge,0.75,Blocked face fraction,4.233438227484365,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Nominal,0.0,Cake resistance (m/kg),0.19389725208049405,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Nominal,100000000.0,Cake resistance (m/kg),0.2350564287300875,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Nominal,1000000000.0,Cake resistance (m/kg),0.6054890185764287,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Nominal,10000000000.0,Cake resistance (m/kg),4.30981491703984,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Surge,0.0,Cake resistance (m/kg),0.7282098541920682,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Surge,100000000.0,Cake resistance (m/kg),0.866387090087132,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Surge,1000000000.0,Cake resistance (m/kg),2.1099822131427057,Screen loss (psi),Sensitivity / local screen; not qualification
+cake_alpha,Surge,10000000000.0,Cake resistance (m/kg),14.545933443698445,Screen loss (psi),Sensitivity / local screen; not qualification
+rating,Finished pack,1.0,Rating (um),OPEN,Nominal pack loss (psi),Cv / Ci and evidence missing
+rating,Finished pack,3.0,Rating (um),OPEN,Nominal pack loss (psi),Cv / Ci and evidence missing
+rating,Finished pack,5.0,Rating (um),OPEN,Nominal pack loss (psi),Cv / Ci and evidence missing
+rating,Finished pack,10.0,Rating (um),OPEN,Nominal pack loss (psi),Cv / Ci and evidence missing
+rating,Finished pack,20.0,Rating (um),OPEN,Nominal pack loss (psi),Cv / Ci and evidence missing

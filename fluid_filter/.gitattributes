@@ -1,0 +1,6 @@
+# Keep workbook and generated engineering artifacts intact in Git.
+*.pdf binary
+*.xlsx binary
+*.step -text -whitespace
+*.dxf -text -whitespace
+assets/*.svg -whitespace

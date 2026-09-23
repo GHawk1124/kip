@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.agents/
+!output/
+output/*
+!output/fluid_filter.pdf
+!output/sweeps.csv
+!output/cad/
+input/*.inspect.ndjson
