@@ -13,7 +13,7 @@ from .resources import AGENTS, SKILL, TEMPLATES
 
 
 #: Optional dependencies a template's document needs.
-EXTRAS = {"showcase": "cad", "discovery": "chem"}
+EXTRAS = {"showcase": "cad", "discovery": "chem", "circuit": "electronics", "fpga": "electronics"}
 
 
 def dependency(source: str | None = None, *, extra: str | None = None) -> str:

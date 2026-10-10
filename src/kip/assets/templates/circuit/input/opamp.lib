@@ -1,0 +1,9 @@
+* Generic voltage-feedback op-amp: 100 dB open-loop gain, 10 MHz gain-bandwidth.
+* Single pole at 100 Hz; the supplies are pins for the symbol but are not modelled.
+.subckt OPAMP inp inn vcc vee out
+Rin inp inn 10Meg
+E1 n1 0 inp inn 100k
+Rp n1 n2 1k
+Cp n2 0 1.5915u
+E2 out 0 n2 0 1
+.ends OPAMP

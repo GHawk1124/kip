@@ -347,6 +347,79 @@ model                                # backbone coloured by pLDDT, with a link t
 - Concentrations (`nM`, `uM`, `molar`), masses (`Da`, `kDa`), `angstrom`,
   `kcal`, `uL` and `ng` are units like any other.
 
+## Electronics
+
+kip reads what electronics tools write: SPICE netlists and results, schematics,
+boards and the fabrication files plotted from them, HDL and simulation dumps,
+FPGA reports, S-parameters, field-solver models and chip layouts. Each one can
+be drawn, tabulated, or checked against the design.
+`kip new name --template circuit` takes an active filter from the schematic
+through simulation to Gerber files. `kip new name --template fpga` takes a UART
+from Verilog to timing closure. Simulation needs ngspice on the PATH (or
+`KIP_NGSPICE`). The readers need nothing extra, except that schemdraw drawings
+need `kip[electronics]`, which both templates install.
+
+```python
+net = read_netlist("input/filter.cir")       # kicad-cli sch export netlist --format spice
+board = Board.load("input/filter.kicad_pcb")
+fab = read_gerbers("input/fab.zip")          # Gerber and Excellon files
+
+def response(R, C):
+    """Output over input, simulated with these values (or read from the cache)."""
+    sim = simulate(net.with_values(R1=R, C1=C), cache="input/filter.raw")
+    return sim.ac.v("out") / sim.ac.v("in")
+
+# %% inputs design "Design inputs"
+f_0 = 1 * kHz
+C = 10 * nF
+
+# %% calc sim "Simulated response"
+R = standard_value(1 / (2 * pi * f_0 * C), 96)   # -> kohm
+H = response(R, C)
+f_sim = cutoff(H)                                 # -> kHz
+assert abs(f_sim - f_0) <= 0.02 * f_0, "Corner within 2 % of the design"
+
+# %% calc fab_checks "Fabrication checks"
+supply = trace_width(I=0.25 * A, dT=10 * K, t=35 * um)
+assert board.min_track >= supply.w, "Tracks carry the supply current"
+assert fab.min_drill >= 0.3 * mm, "Smallest hole within the fabricator's limit"
+```
+
+Calc cells call functions and read attributes, but do not call methods or
+index, so `sim.ac.v("out")` or `placed["LUT"]` goes in a prelude function or
+name. The simulation then follows the inputs: change `C`
+and the next build runs ngspice again.
+
+- SPICE: `read_netlist` reads ngspice, LTspice and KiCad netlists. `simulate`
+  runs ngspice and caches the results next to the document, so builds without
+  ngspice and builds on other machines read the cache while the netlist is
+  unchanged. `read_raw` reads ngspice, Xyce and LTspice results. A `Signal` has
+  measurement functions (`cutoff`, `phase_margin`, `rise_time`, `overshoot`,
+  `settling_time`, `rms`, ...), and a plot cell draws an AC response as a Bode
+  plot. `standard_value(x, 96)` gives the nearest E96 value.
+- Schematics: KiCad (`.kicad_sch`, with its sheets) and xschem (`.sch`, with
+  stand-in symbols when the libraries are absent) draw as vector figures with
+  the source file attached; a KiCad `bom()` groups parts by value. KiCad netlists,
+  SKiDL circuits and schemdraw drawings work too.
+- Boards: a KiCad board gives size, layers, track widths and lengths, holes and
+  placement; it draws as fabricated (top, bottom, or copper only).
+  `read_gerbers` reads the fabrication files back (a zip, a folder or a list) to
+  check them against the board. `read_drill`, `read_bom` and `read_placement`
+  read single files. `trace_width` (IPC-2221), `microstrip` and `stripline` are
+  calculations that render their equations.
+- HDL and FPGA: `read_hdl` (Verilog, SystemVerilog, VHDL) gives ports,
+  parameters and a block symbol. `read_vcd` gives traces with edge, pulse and
+  period measurements, plus timing diagrams; `wavedrom` draws WaveDrom
+  specifications. `read_utilization`, `read_timing` (with `fmax`) and
+  `read_constraints` read Vivado, Quartus, Yosys, nextpnr and OpenSTA output.
+- RF: `read_touchstone` gives S-parameters with return loss, VSWR, impedance,
+  resonance, bandwidth and group delay, and draws a Smith chart.
+  `polar_pattern` draws antenna patterns, and `read_csx` reads an openEMS model
+  with its mesh.
+- Chip layout: `read_gds` (sky130 layer names, or a KLayout `.lyp`) and
+  `read_magic` draw layouts and tabulate layers. `read_metrics` reads OpenLane
+  and LibreLane run metrics.
+
 ## Spreadsheet inputs
 
 A workbook already names its columns and declares its units, so a document reads

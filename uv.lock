@@ -476,12 +476,16 @@ cad = [
 chem = [
     { name = "rdkit" },
 ]
+electronics = [
+    { name = "schemdraw" },
+]
 
 [package.dev-dependencies]
 dev = [
     { name = "pymupdf" },
     { name = "pytest" },
     { name = "rdkit" },
+    { name = "schemdraw" },
 ]
 
 [package.metadata]
@@ -493,18 +497,20 @@ requires-dist = [
     { name = "pint", specifier = ">=0.24" },
     { name = "rdkit", marker = "extra == 'chem'", specifier = ">=2024.3" },
     { name = "rich", specifier = ">=13.0" },
+    { name = "schemdraw", marker = "extra == 'electronics'", specifier = ">=0.19" },
     { name = "sympy", specifier = ">=1.13" },
     { name = "tomlkit", specifier = ">=0.13" },
     { name = "typer", specifier = ">=0.12" },
     { name = "typst", specifier = ">=0.13" },
 ]
-provides-extras = ["cad", "chem"]
+provides-extras = ["cad", "chem", "electronics"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "rdkit", specifier = ">=2024.3" },
+    { name = "schemdraw", specifier = ">=0.19" },
 ]
 
 [[package]]
@@ -987,6 +993,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
+]
+
+[[package]]
+name = "schemdraw"
+version = "0.23"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/e0/5f1a5c6a7651ae0325708ead4020446ab8146bf11316f0d35bf7e26f6ee0/schemdraw-0.23.tar.gz", hash = "sha256:e71afd5ec84edfd9b707331c5bcb49ed7133af85bd17dae461de3fc260b0132f", size = 4773368, upload-time = "2026-05-29T18:10:40.713Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/f6/7efb3798e44868e09e8ce8a4329ac21acd134a3d5fd59792f97a7feccc2a/schemdraw-0.23-py3-none-any.whl", hash = "sha256:b6af33cf175fb7692ed3f71b5d2702c400e009ae26efe76c6fa4f85d34e0fac5", size = 152475, upload-time = "2026-05-29T18:10:12.268Z" },
 ]
 
 [[package]]

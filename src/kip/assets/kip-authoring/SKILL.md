@@ -1,13 +1,15 @@
 ---
 name: kip-authoring
-description: Create and edit kip engineering documents in Python, including unit-checked calculations, requirements, vector figures, tables, and PDF builds, with readers for chemistry and biology files. Use for doc.py projects built with the kip CLI.
+description: Create and edit kip engineering documents in Python, including unit-checked calculations, requirements, vector figures, tables, and PDF builds, with readers for chemistry and electronics files (SPICE, KiCad, Gerber, HDL, Touchstone, GDS). Use for doc.py projects built with the kip CLI.
 ---
 
 Use the existing project's style and requirements. For a new project run
 `kip new folder` (basic), `kip new folder --template requirements` (one object
 with controlled inputs and verification), `kip new folder --template showcase`
-(all features, including optional build123d CAD) or `kip new folder --template
-discovery` (molecules, sequences and structures, with RDKit). Each creates a uv project,
+(all features, including optional build123d CAD), `kip new folder --template
+discovery` (molecules, sequences and structures, with RDKit), `kip new folder
+--template circuit` (schematic, SPICE, board and fabrication files) or `kip new
+folder --template fpga` (HDL, simulation and FPGA reports). Each creates a uv project,
 its input workbooks under input/, and this skill. Add dependencies with
 `uv add` from that folder. `kip migrate` converts an older project's
 requirements.toml and sources.toml into input/ workbooks.
@@ -304,6 +306,98 @@ everything else needs nothing extra.
   `IC50 = 10 ** (-pIC50) * molar  # -> nM`.
 - Method calls are not calc grammar: compute `model.mean_plddt("B")` in the
   prelude and check the name in a calc cell. Cite each model with `@src:`.
+
+## Electronics
+
+kip reads the files electronics tools write -- SPICE netlists and results,
+KiCad and xschem schematics, KiCad boards, Gerber and Excellon, HDL, simulator
+dumps, FPGA reports, Touchstone, openEMS models, GDS and Magic layouts -- and
+shows them as drawings, tables and checked numbers. `kip new folder --template
+circuit` (an active filter from schematic through simulation and board to
+fabrication files) and `--template fpga` (a UART from Verilog to timing
+closure) are worked examples. Only simulation needs a tool: ngspice on the
+PATH, or `KIP_NGSPICE` naming it.
+
+- SPICE: `net = read_netlist("filter.cir")` reads ngspice, LTspice and KiCad
+  (`kicad-cli sch export netlist --format spice`) netlists: `net["R1"].quantity`
+  (10.7 kΩ), `.value_text`, `net.nodes`, `net.analyses`; a table cell lists the
+  elements. `net.with_values(R1=R, C1=C)` puts design values in.
+  `simulate(net, cache="input/filter.raw")` runs ngspice and keeps the results;
+  later builds, and machines without ngspice, read the cache while the netlist
+  and its includes are unchanged, so commit it. `read_raw(path)` reads ngspice,
+  Xyce and LTspice raw files (binary or ASCII) and LTspice text exports.
+- Results: `res.ac`, `.tran`, `.dc`, `.op`, `.noise`. `res.ac.v("out")` is a
+  `Signal` (KiCad's `/out` is found as `out`); `v("out", "in")` is a
+  difference, `i("V1")` a current, `ac.v("out") / ac.v("in")` a response. A plot
+  cell of a signal draws it (an AC response as a Bode plot);
+  `sig.window(0.5 * ms, 4 * ms)` trims one.
+- Measurements are functions, so calc cells render them: `cutoff(H)`,
+  `bandwidth(H)`, `gain_at(H, f)` (dB), `crossover(T)`, `phase_margin(T)`,
+  `gain_margin(T)`, `rise_time(v)`, `fall_time(v)`, `overshoot(v)` (%),
+  `settling_time(v)`, `period(v)`, `rms(v)`, `average(v)`, `peak(v)`,
+  `peak_to_peak(v)`, `value_at(v, t)`. Put the simulation and the `.v(...)`
+  calls in prelude functions (`def response(R, C):` simulating
+  `net.with_values(R1=R, C1=C)` and returning `ac.v("out") / ac.v("in")`) and
+  call them in a calc cell (`H = response(R, C)`), so the results follow the
+  inputs.
+- `standard_value(x, 96)` (or `"E24"`; `round="up"`) is the IEC 60063
+  preferred value; `E_SERIES` holds the series.
+- Schematics: `Schematic.load("x.kicad_sch")` (with its sheets), or
+  `read_schematic(path)` for KiCad or xschem (`.sch`). xschem symbols come from
+  beside the file, `XSCHEM_LIBRARY_PATH` or `PDK_ROOT`, then kip's stand-ins for
+  the devices library; any other is a labelled box listed in `sch.missing`. A
+  draw cell shows the schematic with its file attached; a KiCad `sch.bom()`
+  groups parts by value (`R1–R3`), an xschem `sch.table()` lists the devices.
+  `KicadNetlist.load("x.net")` gives `parts`, `nets`, `net("OUT")`,
+  `connections("U1")` and `nets_table()`. A SKiDL circuit in a
+  table cell is its bill of materials (`from_skidl(circuit)` gives its nets); a
+  schemdraw drawing in a draw cell is a vector figure in kip's fonts.
+- Boards: `board = Board.load("x.kicad_pcb")` gives `size`, `area`,
+  `copper_layers`, `thickness`, `min_track`, `track_widths`,
+  `track_length("OUT")`, `holes`, `min_drill`, `drill_table()`,
+  `summary_table()`, `placement()` and `bom()`. A draw cell shows the top as
+  fabricated; `board.drawing(view="bottom")` or `view="copper"` (`layers=[...]`).
+- Fabrication: `fab = read_gerbers("fab.zip")` (a zip, a folder or a list of
+  Gerber and Excellon files) gives `size`, `copper_layers`, `holes`,
+  `min_drill`, `drill_table()` and `layer_table()`; a draw cell renders the
+  files as a board. `read_gerber`, `read_drill`, `read_bom` and
+  `read_placement` read single files. Check the files against the board in a
+  calc cell: outline, hole count, smallest drill.
+- Sizing: `trace_width(I=..., dT=10 * K, t=35 * um)` (IPC-2221; `.w`, `.A_c`),
+  `microstrip(w=, h=, t=, e_r=)` and `stripline(w=, b=, t=, e_r=)` (`.Z_0`) are
+  calculations. Bind one in a calc cell (`supply = trace_width(...)`) to render
+  its equations, then check `supply.w` in the same cell. `mil` is a unit.
+- HDL: `read_hdl("top.v")["uart_tx"]` (Verilog, SystemVerilog, VHDL) gives
+  `ports` with widths and the comment beside each, `parameters` as written and
+  `parameter("CLK_HZ")` as a number; a draw cell shows the block symbol, a table
+  cell the ports. `read_vcd("sim.vcd")` reads a dump: `trace["tx"]` (short or
+  full name) has `edges()`, `pulses(level)`, `period()`, `frequency()`,
+  `duty()`, `value_at(t)` and `int_at(t)`; `pulse_width(tx, 0)` measures in a
+  calc cell; `trace.timing("valid", "tx", start=..., end=...)` draws a timing
+  diagram. `wavedrom(spec)` draws WaveDrom JSON (a dict, text or a file).
+- FPGA reports: `read_utilization` (Vivado, Quartus, Yosys `stat` text or
+  `-json`, nextpnr `--report`) gives `util["LUT"]`, `available()`, `percent()`
+  and `table(titles={...})`; `read_timing` (Vivado summary, nextpnr log or
+  report, OpenSTA, Quartus) gives `wns`, `whs`, `met`, `table()` and
+  `fmax(report)`; `read_constraints` (XDC, PCF, LPF, QSF, CST, SDC) gives
+  `pin(port)`, `table()` and `clock_table()`.
+- RF: `read_touchstone("x.s2p")` (versions 1 and 2) gives `net.s11`, `net.s21`
+  (signals), `return_loss()`, `vswr()`, `impedance()`, `resonance()`,
+  `bandwidth()` and `group_delay()`; a draw cell shows a Smith chart, a plot
+  cell |S| in dB. `smith_chart(*signals)` and `polar_pattern(angles, *gains,
+  labels=[...])` draw directly. `read_csx("model.xml")` reads an openEMS model
+  (`CSX.Write2XML`): `size`, `cells`, `smallest_cell`, `materials_table()`,
+  `mesh_table()`, `drawing(plane="xz", mesh=True)`.
+- Chip layout: `read_gds(path)` (gzip too; sky130 layer names unless
+  `layer_map=` is a dict or a KLayout `.lyp`) and `read_magic("cell.mag")` give
+  `top`, `size`, `area`, `layers`, `layer_table()` and
+  `drawing(layers=["met1", "met2"])`. `read_metrics` reads OpenLane or
+  LibreLane `metrics.json` or `.csv` (`m.find("timing")`, `m.table()`).
+- Calc cells call functions and read attributes (`board.min_track`,
+  `fab.min_drill`), but do not call methods or index: compute those in the prelude
+  (`f_rtl = (rtl.parameter("CLK_HZ") * Hz).to("MHz")`,
+  `N_LC = placed["ICESTORM_LC"]`) and check the names in a calc cell. Cite
+  datasheets, standards and tools with `@src:`.
 
 ## Page layout
 

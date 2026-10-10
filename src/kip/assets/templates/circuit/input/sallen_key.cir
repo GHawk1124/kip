@@ -1,0 +1,16 @@
+.title Sallen-Key low-pass filter
+.include "opamp.lib"
+.ac dec 50 10 100k
+.tran 5u 4m
+.save v(/in) v(/out)
+C1 /OUT Net-_C1-Pad2_ 22n
+R1 /IN Net-_C1-Pad2_ 10.7k
+R2 Net-_C1-Pad2_ Net-_U1-+_ 10.7k
+C2 Net-_U1-+_ GND 10n
+XU1 Net-_U1-+_ /OUT +5V -5V /OUT OPAMP
+V1 /IN GND PULSE( 0 1 0.5m 1u 1u 5m 10m 0 ) AC 1  
+V2 +5V GND DC 5 
+V3 GND -5V DC 5 
+C3 +5V GND 100n
+C4 GND -5V 100n
+.end

@@ -1,0 +1,30 @@
+[sources.sallen_key]
+title = "A Practical Method of Designing RC Active Filters"
+author = "R. P. Sallen and E. L. Key"
+publisher = "IRE Transactions on Circuit Theory"
+year = 1955
+
+[sources.sloa024]
+title = "Analysis of the Sallen-Key Architecture"
+author = "J. Karki"
+publisher = "Texas Instruments, SLOA024B"
+year = 2002
+
+[sources.ipc2221]
+title = "Generic Standard on Printed Board Design"
+publisher = "IPC, IPC-2221B"
+year = 2012
+note = "conductor current-carrying capacity"
+
+[sources.kicad]
+title = "KiCad EDA"
+publisher = "KiCad Project"
+year = 2026
+url = "https://www.kicad.org"
+note = "schematic, board, and fabrication outputs"
+
+[sources.ngspice]
+title = "Ngspice User's Manual"
+author = "H. Vogt et al."
+year = 2025
+url = "https://ngspice.sourceforge.io/docs.html"
