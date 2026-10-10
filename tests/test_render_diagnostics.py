@@ -34,14 +34,14 @@ plot([0, 1], [0, 1], xlabel=Math("nosuchsymbol"))
     assert caught.value.locations[0] == ("doc.py", "bad_plot", 3)
 
 
-def test_check_render_is_optional_and_does_not_export(tmp_path):
+def test_check_renders_by_default_and_does_not_export(tmp_path):
     path = tmp_path / "doc.py"
     path.write_text('# %% text notes "Notes"\n"#nosuchfunction()"')
     runner = CliRunner()
-    assert runner.invoke(app, ["check", str(path)]).exit_code == 0
-    checked = runner.invoke(app, ["check", str(path), "--render"])
+    assert runner.invoke(app, ["check", str(path), "--no-render"]).exit_code == 0
+    checked = runner.invoke(app, ["check", str(path)])
     assert checked.exit_code == 1
-    assert f"{path}:2: [notes] Typst:" in checked.output
+    assert f"{path}:2: error: [notes] Typst:" in checked.output
     assert not (tmp_path / "output").exists()
     path.write_text('from kip import *\n# %% table "Data"\nTable(["Item"], [(1,)], xlsx="data.xlsx")')
     assert runner.invoke(app, ["check", str(path), "--render"]).exit_code == 0

@@ -18,10 +18,19 @@ Output goes in `output/`.
 - `kip new name --template requirements` starts a requirements document.
 - `kip new name --template component` starts an engineering packet with standard sheets and visible gaps.
 - `kip new name --template showcase` demonstrates all features, including CAD.
-- `uv run kip build` builds the PDF; `uv run kip check` checks the document.
-- `uv run kip check --render` also compiles Typst without writing PDF or spreadsheet exports.
+- `uv run kip check` runs and compiles the document without writing a PDF or
+  spreadsheet exports. It prints each problem once as
+  `doc.py:LINE: error: [cell] message`, and fails on any error, broken reference,
+  failed check or unverified requirement. It warns about equations still too
+  wide to read and notes pages left short. `--no-render` skips compiling.
+- `uv run kip show` lists every cell's values and checks; `kip check --json` and
+  `kip show --json` give the same as data, for agents and scripts.
+- `uv run doc.py` (or `uv run kip build`) writes the PDF and reports the same way;
+  `doc.py` also runs its `prepare=` step first.
 - `uv run kip watch` rebuilds on changes.
-- `kip skill` prints the LLM authoring guide, also included in new projects.
+- `kip skill` prints the LLM authoring guide. New projects carry it in
+  `.claude/skills` and `.agents/skills`, with the working loop in `AGENTS.md`;
+  `kip skill --install .` adds or refreshes them in an existing project.
 - `kip migrate` converts an older project's `requirements.toml` and `sources.toml` into `input/` workbooks.
 
 ```python
@@ -90,6 +99,31 @@ the condition, its values and the branch taken. Anything else -- loops,
 indexing, `x if c else y`, `+=`, method calls, assigning a name twice -- is
 refused before the document runs, with a hint, rather than rendered as algebra
 the code did not perform. Do that work in the prelude or before `# equations`.
+
+An `assert` is a check, shown with its values and the verdict:
+
+```python
+assert sigma <= sigma_allow, "Bending stress"
+# Bending stress   σ ≤ σ_allow  ⇒  12.2 MPa ≤ 160 MPa  ⇒  OK
+```
+
+A check takes no equation number and never stops the document: a failed one
+prints NOT OK in red, `kip build` still writes the PDF and warns, and
+`kip check` fails with the `file:line`. Checks work the same way after
+`# equations` in an `@calculation`.
+
+Values show 4 significant figures -- 12.17, 0.0025, 83333 mm³, 4.167×10⁶ -- and
+a short typed number shows in full; `precision=3` on a cell marker changes it.
+The result box under a calc shows its last value, or the ones named with
+`result=sigma,MS` (`result=none` hides it). An equation too wide for its column
+is set one step per row instead of shrinking. A calc taller than a third of a
+page breaks between equations rather than leave a gap, and keeps its result
+with its last row; `if` and `else` rows take no equation number.
+
+A name a calculation computes belongs to that one cell. Binding it again in
+another cell is an error naming both lines, because tables and prose built
+later would otherwise show a different value from the one printed where it
+was computed.
 
 ## How a document runs
 
@@ -341,7 +375,15 @@ also works. Inline/fenced code, escaped references, comments and native Typst
 strings remain literal. Use `r"""..."""` when prose contains backslash escapes.
 An empty text cell can supply just a section heading. Titles, plot labels and
 inserted `@val:` values are literal text; use `Math(...)` or `Symbol(...)` for
-mathematical plot labels.
+mathematical plot labels. Characters that cannot be the markup the author meant
+print as written -- `bolt #4`, `<0.5 mm`, `$45`, `~5 mm`, `a@b.com`, `C:\temp`,
+`8 * 2` -- while `#strong[...]`, `*bold*`, `$x$`, `Fig.~3` and a referenced
+`<label>` keep their Typst meaning. Markdown `**bold**` and `* item` bullets
+mean what they do in Markdown. An `@val:`, `@blk:`, `@src:` or `@req:` reference to something
+the document does not define is an error that suggests the closest match.
+
+Sweep a plot with `x = linspace(0 * m, L, 41)`: it keeps units, so
+`plot(x, w * x * (L - x) / 2)` labels both axes. numpy is installed with kip.
 
 Load Excel input rows directly with `read_records("input/constants.xlsx")`. Load SVG/PNG
 views with `Drawing.load(...)`, and compose labeled views with `Drawing.grid(...)`.

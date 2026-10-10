@@ -11,12 +11,20 @@ its input workbooks under input/, and this skill. Add dependencies with
 `uv add` from that folder. `kip migrate` converts an older project's
 requirements.toml and sources.toml into input/ workbooks.
 
-Run `uv run doc.py` to prepare assets and build. `uv run kip check` validates
-existing assets; `uv run kip build` also remains supported. `uv run kip preview` builds and
-opens the PDF; `uv run kip watch` rebuilds on source changes. Artifacts are under
-`output/` beside doc.py; `--output name.pdf` chooses a filename within that folder.
-Inspect rendered pages after layout edits. Check reports failed and unverified
-requirements; build validates Python execution but does not certify compliance.
+After every edit run `uv run kip check`. It runs and compiles the document
+without writing anything and prints each problem once, as
+`doc.py:LINE: error: [cell] message` with a hint: Python and unit errors (naming
+the terms whose units disagree), broken references, failed checks, unverified
+requirements and equations still too wide to read. Fix the first error; the
+cells waiting on it are listed in one line. `layout:` notes name pages left
+short. `uv run kip show` lists every cell's values and checks;
+`kip check --json` and `kip show --json` give the same as data. `uv run doc.py`
+regenerates CAD assets (its `prepare=`) and writes the PDF, reporting exactly
+as `kip build` does. `uv run kip preview` builds and opens the PDF;
+`uv run kip watch` rebuilds on source changes. Artifacts are under `output/`
+beside doc.py; `--output name.pdf` chooses a filename within that folder.
+Inspect rendered pages after layout edits. A build does not certify
+compliance; `kip check` fails on failed checks and unverified requirements.
 
 ## Authoring
 
@@ -70,21 +78,37 @@ A calc cell is rendered from its own Python: each assignment prints as
 symbolic = substituted = result. It may contain single-name assignments,
 arithmetic (+ - * / **), bare function calls (`sqrt(x)` keeps units), reads such
 as `C.rho_w` or `sizing.M`, `(expr).to(MPa)`, and `if`/`elif`/`else` (the
-condition and taken branch are shown). Anything else -- loops, indexing,
+condition, unnumbered, and the taken branch are shown). Anything else -- loops, indexing,
 `x if c else y`, `+=`, reassigning a name, method calls -- is refused with a
 hint; compute it in the prelude or before `# equations` in an @calculation.
+State every design verdict as a check, not only in prose:
+`assert sigma <= sigma_allow, "Bending stress"` is shown with its values and
+OK or NOT OK, takes no equation number and never stops the document; a failed
+check fails `kip check`. A computed name belongs to one cell: binding it again
+in any other cell is an error, so give a revised value its own name. Tables,
+plots and drawings may reuse scratch names among themselves.
+Values show 4 significant figures (a short typed number shows in full);
+`precision=3` on a cell marker changes that cell. The result box under a calc
+shows its last value; `result=sigma,MS` names the ones to show and
+`result=none` hides it. An equation too wide for its column is set one step per
+row; `kip check` warns about any that must still shrink.
 Put setup, imports and functions in the prelude. A rich-content block uses its
 last expression: `Table(...)`, `Sheet.load(...)`, `Drawing.load(...)`, `plot(...)`,
 or `Sources.load(...)`. Assign only when another cell needs the object. Existing
 assignments and empty cells naming an existing object remain supported.
 Text blocks contain Python strings with Typst markup: `*strong*`, `_emphasis_`,
-`$math$`, `-` bullets, `+` numbered items, and references `@val:name`, `@blk:id`,
+`$math$`, `$ display math $` (spaces inside), `-` bullets, `+` numbered items,
+`#quote(block: true)[...]`, `#table(...)`, and references `@val:name`, `@blk:id`,
 `@req:ID`, `@src:key`. Indent nested lists. Native `#list`, `#enum`, `#set`, and
 `#show` work; Markdown-style `## Heading` also works. Headings inside fenced code
 stay literal. Raw strings (`r"""..."""`) preserve backslash escapes; f-strings
 can interpolate Python values. References inside escaped text, inline/fenced code,
 comments and native Typst strings stay literal. Titles and inserted `@val:` values
-are literal text. An empty text block can supply a heading without placeholder prose.
+are literal text. Everyday characters print as written: `bolt #4`, `<0.5 mm`,
+`$45`, `~5 mm`, `a@b.com`, `8 * 2`. `*strong*` touches its words; Markdown
+`**bold**` and `* item` bullets also work. A reference to an unknown value, block, source or
+requirement is an error that names the closest match. An empty text block can
+supply a heading without placeholder prose.
 
 ## Content
 
@@ -140,9 +164,10 @@ The optional packet.toml is editable convention, not a fixed document structure:
 - `# %% packet component config="team.toml"` selects another configuration file.
   Input paths remain relative to doc.py. Build/watch reloads configuration edits.
 
-Use `kip check --render` to catch Typst compilation errors without exporting a
-PDF or workbook. The diagnostic names the original cell and, for ordinary
-multiline prose, the source line; generated expressions point to the cell.
+`kip check` also compiles the Typst, without exporting a PDF or workbook, so
+markup errors surface there; `--no-render` skips that step. The diagnostic
+names the original cell and, for ordinary multiline prose, the source line;
+generated expressions point to the cell.
 
 ### Individual content
 
@@ -192,7 +217,9 @@ multiline prose, the source line; generated expressions point to the cell.
   names, rendered as numbered symbolic relations.
 - `table`: `Table(["Case", "Load"], [("LC-1", 10*kN)])`, or
   `Table.from_records([{"Case": "LC-1", "Load": 10*kN}])`.
-  Use `Column("load", "Load", unit="kN", precision=1)` for conversion/formatting.
+  Use `Column("load", "Load", unit="kN", precision=1)` for conversion and fixed
+  decimals; without `precision` a column shows significant figures. Number
+  columns align right and text columns left; `align="center"` overrides.
   `xlsx="loads.xlsx"` exports every row; `max_rows=6` limits the PDF only.
   Strings are literal text. Use `Symbol("sigma_br")`, SymPy expressions, or
   `Math("sigma_y / 2")` for math cells. `Column(..., math=True)` treats that
@@ -209,7 +236,9 @@ multiline prose, the source line; generated expressions point to the cell.
   `overrides={"sigma_br": "Bearing stress"}` for exceptions. Conflicting descriptions
   need an override; incompatible dimensions need narrower sources. Explicit
   `nomenclature({"sigma_br": ("Bearing stress", "MPa")})` remains supported.
-- `plot`: `plot(xs, ys, xlabel="Thickness", ylabel="Stress")`.
+- `plot`: `plot(xs, ys, xlabel="Thickness", ylabel="Stress")`. Sweep with
+  `x = linspace(0 * m, L, 41)`: it keeps units, so `M = w * x * (L - x) / 2`
+  is an array quantity, ready to plot. numpy is available as `import numpy as np`.
   Chain `.line()`, `.scatter()`, `.bar()` for more series. Quantity arrays infer
   units; `xunit`/`yunit` override them. Labels are literal strings; use `Math(...)`
   or `Symbol(...)` for mathematical labels. `Figure(...)` gives full control.
@@ -256,5 +285,8 @@ default, "I.A" for roman/letter, "" to switch numbering off).
 page, `after` ends a section on the block that closes it, `both` isolates a block.
 Prefer `after` when the break belongs to the content that ends, so a heading is
 never orphaned from the table it introduces. A trailing `after` adds no blank
-page. `snap=false` is the explicit freeform exception to grid alignment. Avoid absolute positions unless requested.
+page. A calc, inputs or symbolic cell taller than a third of a page breaks
+between its equations, keeping its result with the last one; shorter cells,
+plots, drawings and short tables stay whole, and `kip check` notes any page
+they leave short. `snap=false` is the explicit freeform exception to grid alignment. Avoid absolute positions unless requested.
 All math and drawings remain vector; retain the grid alignment built into kip.

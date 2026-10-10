@@ -5,9 +5,9 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 from .api import build_pdf
-from .authoring import run_document, calculation, read_records
+from .authoring import run_document, calculation, read_json, read_records
 from .content import (
-    Column, Drawing, Figure, Series, Source, Sources, Table, strip_units,
+    Column, Drawing, Figure, Series, Source, Sources, Table, linspace, strip_units,
     Symbol, Math, nomenclature, inputs_table, plot,
 )
 from .sheets import Constant, Constants, Sheet
@@ -26,10 +26,10 @@ __all__ = [
     "ureg", "Q", "fmt_quantity", "__version__",
     # rich content a block can bind
     "Figure", "Series", "Table", "Column", "Drawing", "Source", "Sources",
-    "strip_units",
+    "strip_units", "linspace",
     "Symbol", "Math", "nomenclature", "inputs_table", "plot",
     "build_pdf",
-    "run_document", "calculation", "read_records",
+    "run_document", "calculation", "read_records", "read_json",
     # spreadsheet inputs
     "Constants", "Constant", "Sheet",
     # requirements and controlled variables

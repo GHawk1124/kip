@@ -260,11 +260,11 @@ class Constants(Mapping):
         return self.add(key, value, unit, override=True, **kw)
 
     # -- presentation ----------------------------------------------------
-    def text(self, key: str, precision: int = 3) -> str:
+    def text(self, key: str, precision: int | None = None) -> str:
         """The formatted value, for prose and for spreadsheet cell templates."""
         return fmt_quantity(self[key], precision)
 
-    def format(self, template: str, precision: int = 3) -> str:
+    def format(self, template: str, precision: int | None = None) -> str:
         """Substitute ``{key}`` (or ``{key:2}`` for precision) in a string."""
         def sub(m: "re.Match") -> str:
             digits = int(m.group(2)) if m.group(2) else precision
@@ -396,7 +396,7 @@ class Sheet(Sequence):
 
     # -- output ----------------------------------------------------------
     def table(self, *keys: str, hide: "Sequence[str]" = (), titles=None,
-              align: str = "left", **options) -> Table:
+              align: str | None = None, **options) -> Table:
         """Render the sheet as a document table, titled from its header row."""
         chosen = list(keys) or [k for k in self.titles if k not in set(hide)]
         for key in chosen:

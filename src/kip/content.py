@@ -13,16 +13,42 @@ keeps the objects importable without Typst and testable without compiling.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import numbers
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from .units import fmt_quantity, ureg
+from .units import fmt_number, fmt_quantity, plain_ratio, unit_text, ureg
 
 __all__ = [
     "Figure", "Series", "Table", "Column", "Drawing", "Source", "Sources",
     "strip_units", "RichContent", "Symbol", "Math", "nomenclature", "inputs_table", "plot",
+    "Listing",
 ]
+
+
+def linspace(start, stop, num: int = 50):
+    """``num`` evenly spaced values from ``start`` to ``stop``, units kept.
+
+    ``x = linspace(0 * m, L, 41)`` is an array quantity, so a sweep reads as
+    the formula it plots -- ``M = w * x * (L - x) / 2`` -- and ``plot(x, M)``
+    labels both axes with their units. A plain ``0`` takes the other end's unit.
+    """
+    import numpy as np
+
+    if isinstance(start, ureg.Quantity) or isinstance(stop, ureg.Quantity):
+        unit = (stop if isinstance(stop, ureg.Quantity) else start).units
+        ends = []
+        for end in (start, stop):
+            if isinstance(end, ureg.Quantity):
+                ends.append(end.to(unit).magnitude)
+            elif end == 0:
+                ends.append(0.0)
+            else:
+                raise ValueError(f"linspace({start!r}, {stop!r}): give both ends units, "
+                                 f"e.g. {end} * {unit:~P}")
+        return ureg.Quantity(np.linspace(ends[0], ends[1], num), unit)
+    return np.linspace(start, stop, num)
 
 
 def strip_units(values: Iterable[Any], unit: str | None = None) -> list[float]:
@@ -40,11 +66,32 @@ def strip_units(values: Iterable[Any], unit: str | None = None) -> list[float]:
     return out
 
 
-def _infer_unit(values: Sequence[Any]) -> str | None:
+def _infer_unit(values) -> str | None:
+    if isinstance(values, ureg.Quantity):
+        return None if values.dimensionless else f"{values.units:~P}"
     for v in values:
         if isinstance(v, ureg.Quantity):
             return f"{v.units:~P}"
     return None
+
+
+def _magnitudes(values, unit: str | None) -> list[float]:
+    """Plain floats for plotting, converted to ``unit``; a quantity array at once."""
+    if isinstance(values, ureg.Quantity) and getattr(values.magnitude, "ndim", 0):
+        values = values.to(unit) if unit else values
+        return [float(v) for v in values.magnitude]
+    return strip_units(list(values), unit)
+
+
+def _series(x, y, label=None):
+    """``(x, y, label)`` from ``plot(x, y)`` or from ``plot(signal)``: an object with a
+    ``kip_series`` method gives its own axes."""
+    if y is not None:
+        return x, y, label
+    if hasattr(type(x), "kip_series"):
+        xs, ys, options = x.kip_series()
+        return xs, ys, label if label is not None else options.get("label")
+    raise TypeError("plot needs x and y, or one signal to plot")
 
 # figures
 
@@ -83,28 +130,35 @@ class Figure:
     series: list[Series] = field(default_factory=list)
     xlim: tuple[float, float] | None = None
     ylim: tuple[float, float] | None = None
+    #: The axes' units, set by the first series; later series are converted to them.
+    xunit: str | None = field(default=None, repr=False)
+    yunit: str | None = field(default=None, repr=False)
 
     def _add(self, kind, x, y, label, mark, dash, color, xunit, yunit) -> "Figure":
-        x, y = list(x), list(y)
-        if len(x) != len(y):
+        x, y, label = _series(x, y, label)
+        x = x if isinstance(x, ureg.Quantity) else list(x)
+        y = y if isinstance(y, ureg.Quantity) else list(y)
+        xu =xunit or self.xunit or _infer_unit(x)
+        yu = yunit or self.yunit or _infer_unit(y)
+        xs, ys = _magnitudes(x, xu), _magnitudes(y, yu)
+        if len(xs) != len(ys):
             raise ValueError("plot x and y must have the same length")
-        xu = xunit or _infer_unit(x)
-        yu = yunit or _infer_unit(y)
         if isinstance(self.xlabel, str) and self.xlabel and xu and "(" not in self.xlabel:
             self.xlabel = f"{self.xlabel} ({xu})"
         if isinstance(self.ylabel, str) and self.ylabel and yu and "(" not in self.ylabel:
             self.ylabel = f"{self.ylabel} ({yu})"
+        self.xunit, self.yunit = self.xunit or xu, self.yunit or yu
         self.series.append(Series(
-            x=strip_units(x, xu), y=strip_units(y, yu),
-            label=label, kind=kind, mark=mark, dash=dash, color=color,
+            x=xs, y=ys, label=label, kind=kind, mark=mark, dash=dash, color=color,
         ))
         return self
 
-    def line(self, x, y, label=None, mark=None, dash=None, color=None,
+    def line(self, x, y=None, label=None, mark=None, dash=None, color=None,
              xunit=None, yunit=None) -> "Figure":
+        """Add a line: ``fig.line(x, y)``, or ``fig.line(signal)`` for a simulated signal."""
         return self._add("line", x, y, label, mark, dash, color, xunit, yunit)
 
-    def scatter(self, x, y, label=None, mark="o", color=None,
+    def scatter(self, x, y=None, label=None, mark="o", color=None,
                 xunit=None, yunit=None) -> "Figure":
         return self._add("scatter", x, y, label, mark, None, color, xunit, yunit)
 
@@ -154,10 +208,23 @@ class Column:
     key: str
     title: str | Symbol | Math | None = None
     unit: str | None = None       # convert quantities to this before display
-    align: str = "right"
-    precision: int = 3
+    #: "left", "right" or "center"; None sets numbers right and words left.
+    align: str | None = None
+    #: Fixed decimal places; None shows significant figures, as calculations do.
+    precision: int | None = None
     format: str | None = None     # e.g. "{:.1%}"
     math: bool = False            # identifier strings render as math symbols
+
+
+def _alignment(values) -> str:
+    """Numbers set right, so their digits line up; words and symbols set left;
+    structure diagrams centre."""
+    filled = [v for v in values if v is not None and not (isinstance(v, str) and v.strip() in ("", "-"))]
+    if filled and all(hasattr(type(v), "kip_image") for v in filled):
+        return "center"
+    numeric = all(isinstance(v, (numbers.Number, ureg.Quantity)) and not isinstance(v, bool)
+                  for v in filled)
+    return "right" if filled and numeric else "left"
 
 
 @dataclass
@@ -191,6 +258,8 @@ class Table:
         for i, row in enumerate(self.rows):
             if len(row) != len(self.columns):
                 raise ValueError(f"table row {i + 1}: expected {len(self.columns)} cells, got {len(row)}")
+        self.columns = [c if c.align else replace(c, align=_alignment(row[i] for row in self.rows))
+                        for i, c in enumerate(self.columns)]
         if self.total_row is not None and len(self.total_row) != len(self.columns):
             raise ValueError("table total row must match the column count")
         if self.max_rows is not None and self.max_rows < 0:
@@ -216,20 +285,24 @@ class Table:
         return out
 
     def cell_text(self, value: Any, col: Column) -> str:
-        if value is None:
-            return ""
+        if value is None or hasattr(type(value), "kip_image"):
+            return ""  # a structure diagram has no text to measure
         if isinstance(value, ureg.Quantity):
             if col.unit:
-                value = value.to(col.unit)
-                return f"{value.magnitude:.{col.precision}f}"
-            return fmt_quantity(value, col.precision)
+                value = value.to(col.unit).magnitude
+                return fmt_number(float(value)) if col.precision is None else f"{value:.{col.precision}f}"
+            if col.precision is None:
+                return fmt_quantity(value)
+            value = plain_ratio(value)
+            unit = unit_text(value.units)
+            return f"{value.magnitude:.{col.precision}f} {unit}".strip()
         if col.format:
             try:
                 return col.format.format(value)
             except (ValueError, KeyError, IndexError):
                 pass
         if isinstance(value, float):
-            return f"{value:.{col.precision}f}"
+            return fmt_number(value) if col.precision is None else f"{value:.{col.precision}f}"
         return str(value)
 
     def display_rows(self) -> tuple[list[list[str]], int]:
@@ -244,6 +317,8 @@ class Table:
 
     def raw_value(self, value: Any, col: Column) -> Any:
         """Native value for the spreadsheet: numbers stay numbers."""
+        if hasattr(type(value), "kip_image"):
+            return getattr(value, "smiles", str(value))
         if isinstance(value, ureg.Quantity):
             return float(value.to(col.unit).magnitude if col.unit
                          else value.magnitude)
@@ -459,12 +534,49 @@ def inputs_table(*sources, **options) -> Table:
     return generate(*sources, **options)
 
 
-def plot(x, y, *, label=None, mark=None, dash=None, color=None,
+def plot(x, y=None, *, label=None, mark=None, dash=None, color=None,
          xunit=None, yunit=None, **options) -> Figure:
-    """Create a line plot in one call; chain .line(), .scatter() or .bar()."""
+    """Create a line plot in one call; chain .line(), .scatter() or .bar().
+
+    ``plot(signal)`` plots a simulated signal against its sweep -- an AC
+    response as a gain in dB on a logarithmic frequency axis -- with its axes
+    labelled; options given here override those.
+    """
+    if y is None and hasattr(type(x), "kip_series"):
+        _, _, defaults = x.kip_series()
+        for key, value in defaults.items():
+            if key != "label":
+                options.setdefault(key, value)
     return Figure(**options).line(x, y, label=label, mark=mark, dash=dash,
                                  color=color, xunit=xunit, yunit=yunit)
 
 
+@dataclass
+class Listing:
+    """A sequence set as a listing: numbered rows of letters in groups.
+
+    :meth:`kip.bio.Sequence.listing` makes one; a draw cell renders it. Rows
+    fill the column, so a narrow column has fewer groups per row. ``marks``
+    maps 1-based positions to a key of ``legend``, which gives that key's
+    colour and words: ``{"hotspot": ("#e69f00", "Interface hotspot")}``.
+    """
+
+    letters: str
+    start: int = 1
+    group: int = 10
+    marks: dict[int, str] = field(default_factory=dict)
+    legend: dict[str, tuple[str, str]] = field(default_factory=dict)
+    caption: str | None = None
+
+    def __post_init__(self) -> None:
+        unknown = sorted(set(self.marks.values()) - set(self.legend))
+        if unknown:
+            raise ValueError(f"listing marks use {', '.join(unknown)}, which the legend does not define")
+        outside = [p for p in self.marks if not self.start <= p < self.start + len(self.letters)]
+        if outside:
+            raise ValueError(f"listing marks position {outside[0]}, outside "
+                             f"{self.start}-{self.start + len(self.letters) - 1}")
+
+
 #: Types a block may bind for the renderer to pick up.
-RichContent = (Figure, Table, Drawing, Sources)
+RichContent = (Figure, Table, Drawing, Sources, Listing)

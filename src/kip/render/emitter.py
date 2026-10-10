@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..content import Drawing, Figure, Source, Sources, Table, Symbol, Math
-from ..doc.kernel import BlockResult, Document
+from ..content import Drawing, Figure, Listing, Source, Sources, Table, Symbol, Math
+from ..doc.kernel import BlockResult, Document, result_names
 from ..units import fmt_quantity
 from .layout import Layout
 from ..prose import headings, literal, quote, transform
@@ -55,21 +55,42 @@ def _raw_block(body: str) -> str:
     return f"{fence * 3}\n{body}\n{fence * 3}"
 
 
-def _math_rows(rows) -> str:
+class _Unnumbered(str):
+    """A displayed row that takes no equation number: a check or an if/else test."""
+
+
+class _Fit(str):
+    """An equation that Typst sets one step per row when it is too wide."""
+
+    def __new__(cls, wide: str, rows: list[str]):
+        self = super().__new__(cls, wide)
+        self.rows = rows
+        return self
+
+
+def _math_rows(rows, *, keep_last: bool = False) -> str:
     """One numbered, grid-snapped display equation per row of Typst math.
 
     A row may itself be a list: the rows of one stacked equation, which share
-    a single number.
+    a single number. ``keep_last`` keeps the last row on the page of whatever
+    follows it -- a calculation's result.
     """
     out = []
     for row in rows:
         if isinstance(row, str):
             if row.strip():
-                out.append(f"#grid-math($display({row})$)")
+                options = ", numbered: false" if isinstance(row, _Unnumbered) else ""
+                if isinstance(row, _Fit):
+                    options = ", rows: (" + "".join(f"$display({r})$, " for r in row.rows) + ")"
+                out.append(f"#grid-math($display({row})${options})")
             continue
         for i, part in enumerate(row):
             options = "" if len(row) == 1 else (", stacked: true" + (", numbered: false" if i else ""))
+            if i < len(row) - 1:
+                options += ", sticky: true"  # one equation's steps share a page
             out.append(f"#grid-math($display({part})${options})")
+    if keep_last and out:
+        out[-1] = out[-1][:-1] + ", sticky: true)"
     return "\n".join(out)
 
 # prose
@@ -237,6 +258,9 @@ def _cell(tbl: Table, value, column=None) -> str:
 
     if isinstance(value, Symbol):
         return f"[${render_name(value.name)}$]"
+    if hasattr(type(value), "kip_image"):  # a molecule's structure diagram
+        svg, width, height = value.kip_image()
+        return f"[#cell-image(bytes({_s(svg.decode('utf-8'))}), {_num(width)}mm, {_num(height)}mm)]"
     if isinstance(value, Math):
         return f"[${value.body}$]"
     if isinstance(value, Basic):
@@ -283,7 +307,9 @@ def _table_kwargs(tbl: Table, xlsx_href: str | None) -> dict:
     # A short table must not break, or its footnote and the xlsx link can be
     # orphaned onto the next page. A genuinely long one has to break or it
     # would overflow the page entirely.
-    breakable = len(rows) > 18
+    # Rows of structure diagrams are several cells tall, so a few fill a page.
+    pictured = any(hasattr(type(v), "kip_image") for row in shown for v in row)
+    breakable = len(rows) > (4 if pictured else 18)
 
     return {
         "breakable": "true" if breakable else "false",
@@ -300,23 +326,21 @@ def _table_kwargs(tbl: Table, xlsx_href: str | None) -> dict:
 
 
 def _result_chip(block, result: BlockResult) -> str:
-    """Spreadsheet-style output marker showing the block's final value."""
+    """Spreadsheet-style output markers: the cell's ``result=`` names, else its last value."""
     if block.kind not in ("calc", "calculation"):
         return "none"
-    from ..math.calc import last_assigned_names
     from ..math.printer import render_name
 
+    names = result_names(block, result)
+    if not names:
+        return "none"
     calculation = result.calculation
-    if calculation is not None:
-        name = last_assigned_names(calculation.source)[-1]
-        value = fmt_quantity(calculation.values[name], calculation.precision)
-    else:
-        names = [n for n in last_assigned_names(block.source) if n in result.values]
-        if not names:
-            return "none"
-        name = names[-1]
-        value = fmt_quantity(result.values[name], block.precision)
-    return f"result-chip(${render_name(name)}$, {_s(value)})"
+    values = calculation.values if calculation is not None else result.values
+    precision = calculation.precision if calculation is not None else block.precision
+    chips = "".join(f"#result-chip(${render_name(n)}$, {_s(fmt_quantity(values[n], precision))})"
+                    for n in names)
+    return f"[{chips}]"
+
 
 
 #: Below this rendered width (mm) each step of a calc goes on its own line
@@ -326,7 +350,16 @@ NARROW_MM = 120.0
 
 def _calc_rows(result: BlockResult, width_mm: float | None) -> list[str]:
     narrow = width_mm is not None and width_mm < NARROW_MM
-    return [eq.stacked() if narrow else eq.wide() for eq in result.equations]
+    rows = []
+    for eq in result.equations:
+        if eq.kind in ("check", "condition"):
+            rows.append(_Unnumbered(eq.wide()))
+        elif narrow:
+            rows.append(eq.stacked())
+        else:
+            steps = eq.stacked()
+            rows.append(_Fit(eq.wide(), steps) if len(steps) > 1 else eq.wide())
+    return rows
 
 
 def _section_heading(block) -> str:
@@ -390,9 +423,9 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
     if kind == "calc":
         if not result.equations:
             return ""
-        body = _math_rows(_calc_rows(result, width_mm))
-        return (f"#kip-calc(id: {bid}, label: {lbl}, "
-                f"chip: {_result_chip(block, result)})[\n{body}\n]")
+        chip = _result_chip(block, result)
+        body = _math_rows(_calc_rows(result, width_mm), keep_last=chip != "none")
+        return f"#kip-calc(id: {bid}, label: {lbl}, chip: {chip})[\n{body}\n]"
 
     if kind == "controlled":
         from ..math.printer import render_name
@@ -444,6 +477,16 @@ def _emit_block(block, result: BlockResult, known: dict[str, str],
         downloads = "(" + ", ".join(_s(name) for name in result.content.attachments) + ",)" if result.content.attachments else "()"
         return (f"#kip-drawing(id: {bid}, label: {lbl}, caption: {_opt(cap)}, downloads: {downloads})"
                 f"[\n{_drawing(result.content, 'drawings/' + block.id + '.svg')}\n]")
+
+    if kind == "draw" and isinstance(result.content, Listing):
+        seq = result.content
+        marks = ("(" + ", ".join(f"{_s(str(p))}: {_s(k)}" for p, k in sorted(seq.marks.items())) + ")"
+                 if seq.marks else "(:)")
+        legend = ("(" + ", ".join(f"{_s(k)}: (rgb({_s(c)}), {_s(t)})" for k, (c, t) in seq.legend.items())
+                  + ")" if seq.legend else "(:)")
+        return (f"#kip-sequence(id: {bid}, label: {lbl}, caption: {_opt(seq.caption)}, "
+                f"letters: {_s(seq.letters)}, start: {seq.start}, group: {seq.group}, "
+                f"marks: {marks}, legend: {legend})")
 
     if kind == "table" and isinstance(result.content, Table):
         kw = _table_kwargs(result.content, assets.get(block.id))

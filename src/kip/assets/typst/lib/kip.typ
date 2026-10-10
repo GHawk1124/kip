@@ -67,24 +67,43 @@
   })
 }
 
+// The block a following grid-snap belongs to, set by kip-anchor.
+#let kip-block-id = state("kip-block-id", none)
+
+// Where a block ends, for the layout report `kip check` prints. It is placed
+// inside the block, out of flow, so it stays with the content it marks.
+#let kip-end(id) = place(context {
+  let p = here().position()
+  [#metadata((type: "end", id: id, page: p.page, y: p.y / 1mm)) <kiplayout>]
+})
+
 // Sections occupy whole grid cells. This local measurement avoids a chain of
 // page-position-dependent layout passes (Typst only allows five such passes).
+//
+// `breakable: auto` keeps a block whole unless it is taller than a third of
+// the page; a taller one breaks between its rows, which are whole cells each,
+// rather than leaving most of a page empty above it.
 #let grid-snap(body, frame: auto, snap: true, breakable: false) = context {
   let g = kip-grid.get()
   let framed = if frame == auto { kip-frames.get() } else { frame }
+  let id = kip-block-id.get()
   layout(size => {
     let inset-x = if framed { 2.5mm } else { 0pt }
     let content = [#kip-snapping.update(snap)#body#kip-snapping.update(true)]
     // A multi-page table repeats its header. Its total height cannot be
     // measured in one region without shortening the final rows on later pages.
+    let m = if breakable == true { none } else {
+      measure(block(width: size.width - 2 * inset-x, spacing: 0pt, content))
+    }
+    let breakable = breakable == true or (breakable == auto and m.height > size.height / 3)
     let height = if breakable { auto } else {
-      let m = measure(block(width: size.width - 2 * inset-x, spacing: 0pt, content))
       calc.ceil(m.height / g) * g + if framed { g } else { 0pt }
     }
     block(width: 100%, height: height,
       spacing: g, breakable: breakable,
       stroke: if framed { 0.4pt + black } else { none }, radius: 3pt,
-      inset: (x: inset-x), content)
+      inset: (x: inset-x), [#content#if id != none { kip-end(id) }])
+    kip-block-id.update(none)
   })
 }
 
@@ -92,10 +111,13 @@
 // block plumbing
 // ---------------------------------------------------------------------------
 
-#let kip-anchor(id, kind) = context {
-  let p = here().position()
-  [#metadata((id: id, kind: kind, page: p.page,
-              x: p.x / 1mm, y: p.y / 1mm)) <kipblk>]
+#let kip-anchor(id, kind) = {
+  kip-block-id.update(id)
+  context {
+    let p = here().position()
+    [#metadata((id: id, kind: kind, page: p.page,
+                x: p.x / 1mm, y: p.y / 1mm)) <kipblk>]
+  }
 }
 
 // Scale content down when wider than its container. Engineering equations are
@@ -110,9 +132,27 @@
   } else { body }
 })
 
+// Inline math can be taller than a line of text. Up to half the leading it may
+// overlap the gap between lines; beyond that its line grows by whole cells, so
+// the rest of the paragraph stays on the rules.
+#let inline-math(it, base, pitch, g) = {
+  // The same box-and-baseline measurement grid-math uses, here for both sides.
+  // Math already reports at least the text's line edges, so most formulas
+  // fit and return unchanged.
+  let lift = measure([#box(height: 1000pt, baseline: 1000pt)#it]).height - 1000pt
+  let drop = measure([#box(height: 1000pt)#it]).height - 1000pt
+  if lift <= 0.75 * base and drop <= 0.25 * base { return it }
+  let slack = (pitch - base) / 2
+  let up = 0.75 * base + calc.ceil(calc.max(0pt, lift - 0.75 * base - slack) / g) * g
+  let down = 0.25 * base + calc.ceil(calc.max(0pt, drop - 0.25 * base - slack) / g) * g
+  // A box takes its baseline from its content's first line; the (possibly
+  // negative) pad puts that line `up` below the box's top.
+  box(height: up + down, pad(top: up - lift, it))
+}
+
 // Each text row has a fixed baseline and a whole-cell advance. Small fonts
 // retain the document line metrics, so labels and provenance share the rules.
-#let grid-text(body) = block(spacing: 0pt, context layout(size => {
+#let grid-text(body, above: 0pt, below: 0pt) = block(above: above, below: below, context layout(size => {
   let g = kip-grid.get()
   let base = kip-base.get()
   let pitch = calc.ceil(base.to-absolute() / g) * g
@@ -131,20 +171,48 @@
   } else { block(spacing: 0pt, content) }
 }))
 
+// Display type -- the title -- set like body text: each baseline on a rule,
+// the first as high as its ascent allows, wrapped lines a whole number of
+// cells apart. The descent of the last line hangs into the next cell.
+#let grid-line(body, size: 10pt) = block(spacing: 0pt, breakable: false, context layout(bounds => {
+  let g = kip-grid.get()
+  let pitch = calc.ceil(size / g) * g
+  let up = calc.ceil(0.75 * size / g) * g
+  let content = [#show par: it => it
+#set text(size: size, top-edge: 0.75 * size, bottom-edge: -0.25 * size)
+#set par(justify: false, leading: pitch - size)
+#body]
+  let m = measure(block(width: bounds.width, spacing: 0pt, content))
+  block(width: 100%, spacing: 0pt, inset: (top: up - 0.75 * size),
+    height: calc.ceil((up + m.height - size) / g) * g, content)
+}))
+
 // Center the actual text bounds within a whole number of paper cells.
 #let grid-cell(body, chip: false, fill: none, stroke: none) = block(spacing: 0pt, context layout(size => {
   // Measure the same styled content we render. Surrounding set/show rules
   // otherwise affect the rendered paragraph differently from measure().
-  let content = [#show par: it => it
+  let styled(leading) = [#show par: it => it
 #set text(top-edge: "cap-height", bottom-edge: "descender")
-#set par(justify: false)
+#set par(justify: false, leading: leading)
 #body]
   let g = kip-grid.get()
   let pad = 2pt
-  let m = measure(block(width: if chip { auto } else { size.width }, spacing: 0pt, content))
+  let width = if chip { auto } else { size.width }
+  // Wrapped text keeps the paper's pitch: leading never changes where lines
+  // break, so two measurements give the line count and the height of a line,
+  // and each line then centres in a cell of its own. A single line keeps the
+  // document leading, which math measures against.
+  let normal = par.leading.to-absolute()
+  let flat = measure(block(width: width, spacing: 0pt, styled(normal)))
+  let lines = calc.round((measure(block(width: width, spacing: 0pt, styled(normal + g))).height - flat.height) / g) + 1
+  let leading = if lines > 1 {
+    calc.max(0pt, g - (flat.height - (lines - 1) * normal) / lines)
+  } else { normal }
+  let content = styled(leading)
+  let m = (width: flat.width, height: flat.height + (lines - 1) * (leading - normal))
   let ht = calc.ceil((m.height + 2 * pad) / g) * g
   block(width: if chip { m.width + 10pt } else { 100% }, height: ht,
-    spacing: 0pt, inset: (x: if chip { 5pt } else { 0pt }, y: pad),
+    spacing: 0pt, breakable: false, inset: (x: if chip { 5pt } else { 0pt }, y: pad),
     fill: fill, stroke: stroke, outset: if chip { -1pt } else { 0pt }, radius: 2pt, align(horizon, content))
 }))
 
@@ -154,22 +222,41 @@
 // strut isolates its ascent, allowing the equation baseline to meet a rule.
 // A stacked equation's continuation rows are unnumbered and left-aligned so
 // their equals signs line up under the first row's.
-#let grid-math(body, numbered: true, stacked: false) = block(spacing: 0pt, context layout(size => {
+//
+// `rows` are the same equation one step per row. They replace it when it is
+// too wide to read at 85% of full size, rather than shrinking it further;
+// whatever must still shrink is reported by `kip check`.
+//
+// An equation never breaks across pages, and `sticky` keeps it on the page of
+// what follows it: the last row of a calculation stays with its result.
+#let grid-math(body, numbered: true, stacked: false, rows: none, sticky: false) = block(
+  spacing: 0pt, breakable: false, sticky: sticky, context layout(size => {
   show par: it => it
   let g = kip-grid.get()
   let natural = measure(body)
-  let f = calc.min(1, (size.width - 12mm) / natural.width)
-  let content = text(size: text.size * f, top-edge: 0.75em, bottom-edge: -0.25em, body)
-  set text(size: text.size * f, top-edge: 0.75em, bottom-edge: -0.25em)
-  let m = measure(content)
-  let ascent = measure([#box(height: 1000pt, baseline: 1000pt)#content]).height - 1000pt
-  let pad = if kip-snapping.get() { calc.ceil(ascent / g) * g - ascent } else { 0pt }
-  if numbered {
-    block(width: 100%, height: 0pt, spacing: 0pt)[#equation-number.step()#place(top + right, dy: pad + ascent - 6pt, text(size: 8pt, top-edge: 6pt, bottom-edge: -2pt)[(#context equation-number.display("1"))])]
+  let f = if natural.width > 0pt { calc.min(1, (size.width - 12mm) / natural.width) } else { 1 }
+  if rows != none and f < 0.85 {
+    for (i, row) in rows.enumerate() {
+      grid-math(row, numbered: numbered and i == 0, stacked: true)
+    }
+  } else {
+    let content = text(size: text.size * f, top-edge: 0.75em, bottom-edge: -0.25em, body)
+    set text(size: text.size * f, top-edge: 0.75em, bottom-edge: -0.25em)
+    let m = measure(content)
+    let ascent = measure([#box(height: 1000pt, baseline: 1000pt)#content]).height - 1000pt
+    let pad = if kip-snapping.get() { calc.ceil(ascent / g) * g - ascent } else { 0pt }
+    if numbered {
+      block(width: 100%, height: 0pt, spacing: 0pt)[#equation-number.step()#place(top + right, dy: pad + ascent - 6pt, text(size: 8pt, top-edge: 6pt, bottom-edge: -2pt)[(#context equation-number.display("1"))])]
+    }
+    let shrunk = if f < 0.85 {
+      let p = here().position()
+      let n = if numbered { equation-number.get().first() + 1 } else { none }
+      [#metadata((type: "shrunk", page: p.page, y: p.y / 1mm, scale: f, number: n)) <kiplayout>]
+    }
+    block(width: 100%, height: if kip-snapping.get() { calc.ceil((pad + m.height) / g) * g } else { m.height },
+      spacing: 0pt, inset: (top: pad, left: if stacked { 2 * g } else { 0pt }),
+      align(if stacked { left } else { center }, [#content#shrunk]))
   }
-  block(width: 100%, height: if kip-snapping.get() { calc.ceil((pad + m.height) / g) * g } else { m.height },
-    spacing: 0pt, inset: (top: pad, left: if stacked { 2 * g } else { 0pt }),
-    align(if stacked { left } else { center }, content))
 }))
 
 // Graphics have intrinsic coordinates; quantise only their occupied height.
@@ -179,6 +266,57 @@
   block(width: 100%, height: calc.ceil(m.height / g) * g,
     spacing: 0pt, body)
 }))
+
+// Block content written into prose -- a quote, a native table or grid, a
+// figure -- takes a cell of air on each side and whole cells of height, so the
+// text after it stays on the rules.
+#let grid-display(body) = context {
+  let g = kip-grid.get()
+  block(width: 100%, above: g, below: g, layout(size => {
+    let h = measure(block(width: size.width, spacing: 0pt, body)).height
+    block(width: 100%, spacing: 0pt, inset: (bottom: calc.ceil(h / g) * g - h), body)
+  }))
+}
+
+// Prose as text cells and the opening text write it. A display equation sets
+// like a calculation row: centred, its baseline on a rule. A block quote's
+// text is not a paragraph (it has no paragraph break), so it is set on the
+// rules here rather than by the paragraph rule.
+#let kip-prose(body) = context {
+  let g = kip-grid.get()
+  let base = kip-base.get()
+  let pitch = calc.ceil(base.to-absolute() / g) * g
+  // Inline math is set before its paragraph is, so this rule lives here rather
+  // than in grid-text. Display rows are labelled to skip it: grid-math already
+  // fits them to the rules.
+  show math.equation.where(block: false): it => {
+    if it.at("label", default: none) == <kip-display> { it }
+    else { inline-math(it, base, pitch, g) }
+  }
+  // A cell of air above. Below, the row's descent cell is usually air enough;
+  // a deep row (a tall denominator) takes one more cell, so the white space
+  // under the formula matches the space over it to within half a cell.
+  show math.equation.where(block: true): it => {
+    let row = [#math.equation(block: false, math.display(it.body))<kip-display>]
+    let lift = measure([#box(height: 1000pt, baseline: 1000pt)#row]).height - 1000pt
+    let drop = measure([#box(height: 1000pt)#row]).height - 1000pt
+    let over = g + calc.ceil(lift / g) * g - lift - 0.25 * base
+    let under = calc.ceil(drop / g) * g + pitch - 0.75 * base - drop
+    block(width: 100%, above: g, below: if under + g / 2 < over { g } else { 0pt },
+      grid-math(row, numbered: false))
+  }
+  show quote.where(block: true): it => grid-display(pad(x: 1em, {
+    grid-text(it.body)
+    if it.attribution != none { grid-text(align(end)[--- #it.attribution]) }
+  }))
+  // Half the leading above and below each line makes a one-line row exactly one
+  // cell, and wrapped lines keep the document pitch.
+  set table(inset: (x: 5pt, y: (pitch - base) / 2))
+  show table: grid-display
+  show grid: grid-display
+  show figure: grid-display
+  body
+}
 
 // A numbered section heading. Levels beyond the three styled below keep the
 // body size and simply indent through the numbering, which is what a deep
@@ -221,14 +359,14 @@
   kip-anchor(id, "text")
   grid-snap(frame: frame, snap: snap, breakable: true)[
     #block-title(label)
-    #body
+    #kip-prose(body)
     #parbreak()
   ]
 }
 
 #let kip-calc(id: "", label: none, chip: none, snap: true, frame: auto, body) = {
   kip-anchor(id, "calc")
-  grid-snap(frame: frame, snap: snap)[
+  grid-snap(frame: frame, snap: snap, breakable: auto)[
     #block-title(label)
     #body
     #if chip != none { chip }
@@ -237,7 +375,7 @@
 
 #let kip-given(id: "", label: none, snap: true, frame: auto, rows: ()) = {
   kip-anchor(id, "given")
-  grid-snap(frame: frame, snap: snap)[
+  grid-snap(frame: frame, snap: snap, breakable: auto)[
     #block-title(label, color: kip-colors.input)
     #for r in rows {
       grid-cell(chip: true, stroke: 0.4pt + black,
@@ -258,13 +396,14 @@
 // which requirement levies the value and which item owns it.
 #let kip-controlled(id: "", label: none, rows: (), snap: true, frame: auto) = {
   kip-anchor(id, "controlled")
-  grid-snap(frame: frame, snap: snap)[
+  grid-snap(frame: frame, snap: snap, breakable: auto)[
     #block-title(label, color: kip-colors.input)
     #for r in rows {
-      grid(columns: (auto, 1fr), gutter: 5pt, align: horizon,
+      // A bare grid takes paragraph spacing (one cell) above and below.
+      block(spacing: 0pt, grid(columns: (auto, 1fr), gutter: 5pt, align: horizon,
         grid-cell(chip: true, stroke: 0.4pt + black,
           text(fill: kip-colors.ink)[#r.name = #r.value]),
-        grid-cell(text(size: 7pt, fill: kip-colors.faint)[#r.source #sym.dot.c #r.owner]))
+        grid-cell(text(size: 7pt, fill: kip-colors.faint)[#r.source #sym.dot.c #r.owner])))
     }
   ]
 }
@@ -297,7 +436,7 @@
 
 #let kip-symbolic(id: "", label: none, snap: true, frame: auto, body) = {
   kip-anchor(id, "symbolic")
-  grid-snap(frame: frame, snap: snap)[
+  grid-snap(frame: frame, snap: snap, breakable: auto)[
     #block-title(label)
     #body
   ]
@@ -343,7 +482,50 @@
       grid-text(align(center, text(size: 8pt, fill: kip-colors.faint, style: "italic", caption)))
     }
     #for filename in downloads {
-      grid-cell(align(center, text(size: 7.6pt, link(filename, [Open #filename (mm, 1:1)]))))
+      grid-cell(align(center, text(size: 7.6pt, link(filename,
+        [Open #filename#if filename.ends-with(".dxf") [ (mm, 1:1)]]))))
+    }
+  ]
+}
+
+// A structure diagram in a table cell, at the size kip drew it.
+#let cell-image(data, width, height) = box(image(data, format: "svg", width: width, height: height))
+
+// A sequence listing: rows of letters in groups, each row numbered by its
+// first position and set on the rules like body text. As many groups fit a
+// row as the column allows. Marked positions take their legend's fill.
+#let kip-sequence(id: "", label: none, caption: none, letters: "", start: 1, group: 10,
+                  marks: (:), legend: (:), snap: true, frame: auto) = {
+  kip-anchor(id, "draw")
+  grid-snap(frame: frame, snap: snap, breakable: auto)[
+    #block-title(label)
+    #context layout(size => {
+      let mono(body) = text(font: ("DejaVu Sans Mono",), size: 8.4pt, body)
+      let chars = letters.clusters()
+      let n = chars.len()
+      let last = str(start + calc.max(0, n - 1))
+      let number-width = measure(text(size: 7.4pt, last)).width + 3mm
+      let space = measure(mono("M M")).width - 2 * measure(mono("M")).width
+      let group-width = measure(mono("M" * group)).width + space
+      let per = calc.max(1, calc.floor((size.width - number-width + space) / group-width)) * group
+      for first in range(0, n, step: per) {
+        let row = range(first, calc.min(n, first + per)).map(i => {
+          let key = marks.at(str(start + i), default: none)
+          let c = mono(chars.at(i))
+          let c = if key == none { c } else { highlight(fill: legend.at(key).at(0), extent: 0.6pt, c) }
+          if calc.rem(i - first, group) == group - 1 and i < n - 1 { c + h(space) } else { c }
+        })
+        grid-text(grid(columns: (number-width, 1fr),
+          align(right, text(size: 7.4pt, fill: kip-colors.faint, str(start + first)) + h(3mm)),
+          row.join()))
+      }
+    })
+    #if legend.len() > 0 {
+      grid-text(text(size: 7.6pt, fill: kip-colors.faint, legend.values().map(((fill, words)) =>
+        [#box(width: 7pt, height: 7pt, fill: fill, radius: 1pt, baseline: 1pt) #words]).join(h(4mm))))
+    }
+    #if caption != none {
+      grid-text(align(center, text(size: 8pt, fill: kip-colors.faint, style: "italic", caption)))
     }
   ]
 }
@@ -409,7 +591,8 @@
       columns: table-columns(headers, rows, tokens, size.width),
       stroke: none,
       inset: (x: 6pt, y: 0pt),
-      align: (col, _) => al.at(col) + horizon,
+      // Top, so a single-line cell shares the first baseline of a wrapped one.
+      align: (col, _) => al.at(col) + top,
       fill: (col, row) => {
         if row == 0 { kip-colors.chip }
         else if zebra and calc.rem(row, 2) == 0 { rgb("#0000000a") }
@@ -518,12 +701,14 @@
 // template
 // ---------------------------------------------------------------------------
 
-// Split only plain text and sequences. Styled spans, links, and math remain
-// intact, so wrapping never drops their formatting or destinations.
+// Split only plain text and sequences. Styled spans, links, math, tables and
+// grids remain intact, so wrapping never drops their formatting, destinations
+// or structure.
+#let sequence = [*a* b].func()
 #let opening-tokens(body) = {
   if body.func() == text {
     body.text.matches(regex("\\S+\\s*|\\s+")).map(m => text(m.text))
-  } else if body.has("children") {
+  } else if body.func() == sequence {
     body.children.map(opening-tokens).flatten()
   } else { (body,) }
 }
@@ -544,9 +729,25 @@
       tokens.slice(0, lo).join() + parbreak())
   }
   if lo < tokens.len() {
-    block(width: 100%, spacing: 0pt, tokens.slice(lo).join() + parbreak())
+    // Splitting exactly between paragraphs must keep the blank row between
+    // them, unless the space left beside the title fields already gives one.
+    let spaced = tokens.filter(t => t.func() != [ ].func())
+    let edge = tokens.slice(0, lo).filter(t => t.func() != [ ].func())
+    let used = measure(block(width: narrow, spacing: 0pt, tokens.slice(0, lo).join() + parbreak())).height
+    let gap = edge.len() > 0 and edge.len() < spaced.len() and height - used < kip-grid.get() and (
+      edge.last().func() == parbreak or spaced.at(edge.len()).func() == parbreak)
+    block(width: 100%, above: if gap { kip-grid.get() } else { 0pt }, below: 0pt,
+      tokens.slice(lo).join() + parbreak())
   }
 })
+
+// The title and subtitle on the rules, with a heavy rule one cell below.
+#let title-heading(title, subtitle) = context {
+  grid-line(size: 17pt, text(weight: "bold", title))
+  if subtitle != none { grid-line(size: 9.5pt, text(fill: kip-colors.faint, subtitle)) }
+  block(height: kip-grid.get(), spacing: 0pt, width: 100%,
+    place(bottom + left, line(length: 100%, stroke: 0.9pt + kip-colors.ink)))
+}
 
 #let kip-doc(
   title: none,
@@ -616,7 +817,10 @@
     // List line boxes already occupy a whole pitch. An identity show rule
     // inside a list does not cancel this outer paragraph transformation.
     if text.top-edge == pitch and text.bottom-edge == 0pt { it }
-    else { grid-text(it) }
+    // A blank row follows each paragraph. Spacing only below means a label or
+    // heading keeps its text on the next row, and the row falls away at the
+    // end of a cell.
+    else { grid-text(it, below: grid-step) }
   }
   show math.equation.where(block: true): set block(spacing: grid-step)
 
@@ -633,12 +837,14 @@
   set enum(spacing: 0pt)
   show list.where(tight: false): set list(spacing: grid-step)
   show enum.where(tight: false): set enum(spacing: grid-step)
-  show list: set block(above: 0pt, below: 0pt)
-  show enum: set block(above: 0pt, below: 0pt)
+  // A list ends with the same blank row as a paragraph. A nested list's row
+  // falls away at the end of its item.
+  show list: set block(above: 0pt, below: grid-step)
+  show enum: set block(above: 0pt, below: grid-step)
   show list: grid-list
   show enum: grid-list
   show raw.where(block: true): set block(above: 0pt, below: 0pt)
-  show raw.where(block: true): it => grid-text(it)
+  show raw.where(block: true): it => grid-text(it, above: grid-step, below: grid-step)
 
   // Headings retain the common line metrics.
   // One rule branching on level, rather than one rule per level: a document
@@ -662,12 +868,15 @@
     // Whole grid cells of air above, so the separation never costs alignment;
     // nothing below, because a heading belongs to what follows it. `sticky`
     // keeps it off the bottom of a page, orphaned from its own section.
+    // The baseline sits on a rule like body text; a ruled heading draws its
+    // rule on the next one.
     block(
       above: if it.level == 1 { 2 * grid-step } else { grid-step },
       below: 0pt, sticky: true,
     )[
-      #grid-cell(text(size: hs, weight: weight, style: style, shown))
+      #grid-text(text(size: hs, weight: weight, style: style, shown))
       #if ruled {
+        v(grid-step)
         place(bottom + left, line(length: 100%, stroke: 0.5pt + kip-colors.rule))
       }
     ]
@@ -681,11 +890,7 @@
       let mw = if metadata == none { 0pt } else { measure(metadata).width }
       let mh = if metadata == none { 0pt } else { measure(metadata).height }
       let narrow = size.width - mw - if mw > 0pt { 3 * grid-step } else { 0pt }
-      let title-content = block(width: narrow, spacing: 0pt)[
-        #grid-cell(text(size: 17pt, weight: "bold", title))
-        #if subtitle != none { grid-cell(text(size: 9.5pt, fill: kip-colors.faint, subtitle)) }
-        #place(line(length: 100%, stroke: 0.9pt + kip-colors.ink))
-      ]
+      let title-content = block(width: narrow, spacing: 0pt, title-heading(title, subtitle))
       let th = measure(title-content).height
       block(width: 100%, spacing: grid-step)[
         #place(top + right, metadata)
@@ -699,20 +904,14 @@
         } else {
           block-title(intro.label)
         }
-        #opening-flow(intro.body, narrow, calc.max(0pt, mh - th - grid-step - if intro.label != none { grid-step } else { 0pt }))
+        #kip-prose(opening-flow(intro.body, narrow, calc.max(0pt, mh - th - grid-step - if intro.label != none { grid-step } else { 0pt })))
         #label("blk-" + intro.id)
       ]
     })
   } else if title != none {
     grid-snap(frame: false)[
       #grid(columns: (1fr, auto), align: (left + top, right + top), gutter: 3 * grid-step,
-        block(spacing: 0pt)[
-          #grid-cell(text(size: 17pt, weight: "bold", title))
-          #if subtitle != none [
-            #grid-cell(text(size: 9.5pt, fill: kip-colors.faint, subtitle))
-          ]
-          #place(line(length: 100%, stroke: 0.9pt + kip-colors.ink))
-        ],
+        block(spacing: 0pt, title-heading(title, subtitle)),
         title-block(title-fields),
       )
     ]

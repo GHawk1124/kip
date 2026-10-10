@@ -21,13 +21,16 @@ import re
 import tokenize
 from dataclasses import dataclass, field
 
-from ..units import fmt_number, ureg
+import pint
+
+from ..units import _power, fmt_quantity, plain_ratio, significant, unit_text, ureg
 from .printer import render_name
 
 __all__ = [
-    "CalcRenderError", "Equation", "RenderedCalc", "render_calc", "check_calc",
+    "CalcRenderError", "Check", "Equation", "RenderedCalc", "render_calc", "check_calc",
     "last_assigned_names", "display_units", "unit_text", "value_math",
-    "is_external_call", "convert", "with_conversions",
+    "is_external_call", "convert", "with_conversions", "strip_checks", "has_checks",
+    "dimension_name", "explain_dimensions",
 ]
 
 #: ``sigma = M * c / I    # -> MPa`` asks for the result in MPa.
@@ -35,18 +38,28 @@ _ARROW_RE = re.compile(r"^#\s*->\s*(?P<unit>\S.*?)\s*$")
 
 
 class CalcRenderError(Exception):
-    """A calc cell could not be rendered as written."""
+    """A calc cell could not be rendered as written.
+
+    ``lineno`` is the line in the rendered source, when there is one; the
+    kernel turns it into a ``file:line`` the author can open.
+    """
+
+    def __init__(self, message: str, lineno: int | None = None):
+        super().__init__(message)
+        self.lineno = lineno
 
 
 @dataclass
 class Equation:
     """One displayed line: ``lhs = parts[0] = parts[1] = ...``.
 
-    A condition row (from ``if``) has an empty ``lhs`` and a single part.
+    A condition row (from ``if``) and a check row (from ``assert``) have an
+    empty ``lhs`` and a single part.
     """
 
     lhs: str
     parts: list[str] = field(default_factory=list)
+    kind: str = "equation"  # "equation" | "condition" | "check"
 
     def wide(self) -> str:
         if not self.lhs:
@@ -67,10 +80,27 @@ class Equation:
 
 
 @dataclass
+class Check:
+    """An ``assert`` in a calculation: the condition, its values, and the verdict."""
+
+    line: int        # in the rendered source; the kernel makes it absolute
+    condition: str   # as written: ``sigma <= sigma_allow``
+    values: str      # the names it reads: ``sigma = 12.2 MPa, sigma_allow = 160 MPa``
+    passed: bool
+    message: str = ""
+    file: str = ""
+
+    def describe(self) -> str:
+        what = f"{self.message}: " if self.message else ""
+        return f"{what}{self.condition} is false ({self.values})"
+
+
+@dataclass
 class RenderedCalc:
     equations: list[Equation]
     assigned: list[str] = field(default_factory=list)
     converted: dict[str, str] = field(default_factory=dict)
+    checks: list[Check] = field(default_factory=list)
 
 
 # -- source helpers -------------------------------------------------------
@@ -132,9 +162,8 @@ def display_units(source: str) -> "tuple[str, list[tuple[str, str]]]":
         name = assigned_at.get(row)
         if name is None:
             raise CalcRenderError(
-                f"line {row}: '# -> {match.group('unit')}' must follow an "
-                "assignment; it names the unit that result is displayed in"
-            )
+                f"'# -> {match.group('unit')}' must follow an "
+                "assignment; it names the unit that result is displayed in", lineno=row)
         requests.append((name, match.group("unit")))
         lines[row - 1] = lines[row - 1][:col].rstrip()
     return "\n".join(lines), requests
@@ -142,14 +171,95 @@ def display_units(source: str) -> "tuple[str, list[tuple[str, str]]]":
 
 def convert(value, unit: str, name: str):
     """``value.to(unit)`` with an error that names the result and the unit."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:  # a ratio asked for in percent: 0.057 is 5.7 %
+            if ureg.Quantity(1, unit).dimensionless:
+                return ureg.Quantity(value, "dimensionless").to(unit)
+        except Exception:
+            pass
     if not isinstance(value, ureg.Quantity):
         raise CalcRenderError(
             f"'# -> {unit}' asks for {name!r} in {unit}, but it is a plain "
             f"{type(value).__name__}, not a quantity with units")
     try:
         return value.to(unit)
-    except Exception as e:  # pint raises several types
-        raise CalcRenderError(f"cannot convert {name!r} from {value.units:~P} to {unit}: {e}") from e
+    except pint.DimensionalityError as e:
+        raise CalcRenderError(
+            f"cannot convert {name!r} from {unit_text(value.units)} to {unit}: "
+            f"{name} is {dimension_name(value)}, but {unit} is "
+            f"{dimension_name(ureg.Quantity(1, unit))}") from e
+    except Exception as e:  # an unknown unit name, chiefly
+        raise CalcRenderError(f"cannot convert {name!r} to {unit}: {e}") from e
+
+
+#: Dimensions an engineer names, keyed by a unit that has them.
+_NAMED_DIMENSIONS = (
+    ("dimensionless", "a plain number"), ("m", "a length"), ("m**2", "an area"),
+    ("m**3", "a volume or section modulus"), ("m**4", "a second moment of area"),
+    ("N", "a force"), ("Pa", "a pressure or stress"), ("N*m", "a moment or energy"),
+    ("N/m", "a force per length"), ("kg", "a mass"), ("s", "a time"),
+    ("kg/m**3", "a density"), ("m/s", "a velocity"), ("m/s**2", "an acceleration"),
+    ("W", "a power"), ("K", "a temperature"), ("Hz", "a frequency"),
+)
+
+
+def dimension_name(value) -> str:
+    """``a pressure or stress``; otherwise the dimensions: ``[force]/[length]³``."""
+    dims = getattr(value, "dimensionality", ureg.dimensionless.dimensionality)
+    for unit, name in _NAMED_DIMENSIONS:
+        if ureg.Quantity(1, unit).dimensionality == dims:
+            return name
+    lengths = dict(dims / ureg.Quantity(1, "N").dimensionality)
+    if set(lengths) == {"[length]"}:  # kN·m/mm⁴ reads better as force/length³
+        k = lengths["[length]"]
+        return f"[force]·{_power('[length]', k)}" if k > 0 else f"[force]/{_power('[length]', -k)}"
+    items = list(dict(dims).items())
+    num = [_power(n, e) for n, e in items if e > 0]
+    den = [_power(n, -e) for n, e in items if e < 0]
+    text = "·".join(num) or "1"
+    if den:
+        text += "/" + (den[0] if len(den) == 1 else "(" + "·".join(den) + ")")
+    return text
+
+
+def mixes_units(e: Exception) -> bool:
+    """pint's two ways of saying both sides of an operation disagree in units."""
+    return isinstance(e, pint.DimensionalityError) or (
+        isinstance(e, ValueError) and str(e).startswith("Cannot compare"))
+
+
+def explain_dimensions(node: ast.AST, namespace: dict) -> str | None:
+    """Name the ``+``, ``-`` or comparison whose two sides disagree in dimension.
+
+    pint says only "Cannot convert from 'megapascal' to 'dimensionless'";
+    an author needs to know which terms of a long expression to look at.
+    """
+    def value(expr):
+        return eval(compile(ast.Expression(expr), "<term>", "eval"), dict(namespace))
+
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.BinOp) and isinstance(sub.op, (ast.Add, ast.Sub)):
+            pairs = [(sub.left, sub.right, "add" if isinstance(sub.op, ast.Add) else "subtract")]
+        elif isinstance(sub, ast.Compare):
+            sides = [sub.left, *sub.comparators]
+            pairs = [(a, b, "compare") for a, b in zip(sides, sides[1:])]
+        else:
+            continue
+        for left, right, verb in pairs:
+            try:
+                lv, rv = value(left), value(right)
+            except Exception:
+                continue
+            ld = getattr(lv, "dimensionality", ureg.dimensionless.dimensionality)
+            rd = getattr(rv, "dimensionality", ureg.dimensionless.dimensionality)
+            if ld != rd:
+                a, b = ast.unparse(left), ast.unparse(right)
+                if verb == "subtract":
+                    a, b, lv, rv = b, a, rv, lv
+                joiner = {"add": "and", "subtract": "from", "compare": "with"}[verb]
+                return (f"cannot {verb} {a} ({dimension_name(lv)}) {joiner} "
+                        f"{b} ({dimension_name(rv)})")
+    return None
 
 
 def with_conversions(body: list[ast.stmt], conversions: list[tuple[str, str]]) -> None:
@@ -175,13 +285,34 @@ def with_conversions(body: list[ast.stmt], conversions: list[tuple[str, str]]) -
                 call = ast.parse(
                     f"{name} = __import__('kip.math.calc', fromlist=['convert'])"
                     f".convert({name}, {wanted[name]!r}, {name!r})").body[0]
-                stmts.insert(i + 1, ast.copy_location(call, node))
+                for part in ast.walk(call):  # errors in it point at the assignment
+                    ast.copy_location(part, node)
+                stmts.insert(i + 1, call)
                 i += 1
             i += 1
 
     visit(body)
     for node in body:
         ast.fix_missing_locations(node)
+
+
+def has_checks(stmts: list[ast.stmt]) -> bool:
+    return any(isinstance(n, ast.Assert) for s in stmts for n in ast.walk(s))
+
+
+def strip_checks(stmts: list[ast.stmt], after: int = 0) -> None:
+    """Replace each ``assert`` (after line ``after``) with ``pass`` before running.
+
+    A failed check is a result to report, not an exception: the cell keeps
+    going, nothing downstream is blocked, and :func:`render_calc` evaluates
+    and shows the condition from the finished namespace instead.
+    """
+    for i, node in enumerate(stmts):
+        if isinstance(node, ast.Assert) and node.lineno > after:
+            stmts[i] = ast.copy_location(ast.Pass(), node)
+        elif isinstance(node, ast.If):
+            strip_checks(node.body, after)
+            strip_checks(node.orelse, after)
 
 
 def is_external_call(tree: ast.Module) -> bool:
@@ -208,11 +339,12 @@ _HINT_SETUP = ("compute it before '# equations' in an @calculation, or in a "
                "prelude helper, and use the result by name")
 
 
-def check_calc(tree: ast.Module) -> list[tuple[ast.AST, str, str]]:
+def check_calc(tree: ast.Module, *, checks: bool = True) -> list[tuple[ast.AST, str, str]]:
     """Every construct the renderer cannot show faithfully: ``(node, message, hint)``.
 
     This is an allowlist. What is not listed below is refused, so nothing is
-    rendered as algebra the code did not perform.
+    rendered as algebra the code did not perform. ``checks=False`` refuses
+    ``assert``, for cells that show values but not working.
     """
     problems: list[tuple[ast.AST, str, str]] = []
 
@@ -312,6 +444,17 @@ def check_calc(tree: ast.Module) -> list[tuple[ast.AST, str, str]]:
                 assigned |= a1 | a2
             elif isinstance(node, ast.Pass):
                 pass
+            elif isinstance(node, ast.Assert):
+                if not checks:
+                    bad(node, "a check (assert) is not shown in this cell",
+                        "put checks in a calc cell, after the values they test")
+                    continue
+                expr(node.test, test=True)
+                read |= {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+                if node.msg is not None and not (isinstance(node.msg, ast.Constant)
+                                                 and isinstance(node.msg.value, str)):
+                    bad(node.msg, "a check's message must be a plain string",
+                        'assert sigma <= sigma_allow, "Bending stress"')
             elif isinstance(node, ast.AugAssign):
                 bad(node, "augmented assignment (+=, *=, ...) is not rendered",
                     "write a new name: x_2 = x + 1")
@@ -332,43 +475,15 @@ def check_calc(tree: ast.Module) -> list[tuple[ast.AST, str, str]]:
 
 # -- values ------------------------------------------------------------------
 
-_SUPERSCRIPT = str.maketrans("0123456789-.", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻·")
-
-
-def _unit_symbol(name: str) -> str:
-    symbol = ureg.get_symbol(name)
-    return {"deg": "°", "degree": "°"}.get(symbol, symbol)
-
-
-def _power(symbol: str, exponent) -> str:
-    if exponent == 1:
-        return symbol
-    text = f"{exponent:g}".translate(_SUPERSCRIPT)
-    return symbol + text
-
-
-def unit_text(units) -> str:
-    """Compact, upright unit text: ``kg/m³``, ``kN·m``, ``W/(m²·K)``, ``°C``."""
-    items = list(getattr(units, "_units", {}).items())
-    num = [_power(_unit_symbol(n), e) for n, e in items if e > 0]
-    den = [_power(_unit_symbol(n), -e) for n, e in items if e < 0]
-    text = "·".join(num) or ("1" if den else "")
-    if den:
-        text += "/" + (den[0] if len(den) == 1 else "(" + "·".join(den) + ")")
-    return text
-
-
-def _number_math(value, precision: int | None) -> str:
-    """``precision=None`` keeps a written number exactly as typed."""
-    if isinstance(value, float):
-        text = repr(value) if precision is None else fmt_number(value, precision)
-        text = text.replace("e+0", "e").replace("e-0", "e-").replace("e+", "e")
-    else:
-        text = str(value)
-    if "e" in text:
-        mantissa, _, exponent = text.partition("e")
-        return f"{mantissa} dot 10^({int(exponent)})"
-    return text
+def _number_math(value, precision: int | None, *, exact: bool = False) -> str:
+    """``exact`` keeps a written number exactly as typed."""
+    if not isinstance(value, float) or value != value or value in (float("inf"), float("-inf")):
+        return str(value)
+    if exact:
+        mantissa, _, exponent = repr(value).partition("e")
+        return f"{mantissa} dot 10^({int(exponent)})" if exponent else mantissa
+    digits, exponent = significant(value, precision)
+    return digits if exponent is None else f"{digits} dot 10^({exponent})"
 
 
 def _unit_math(units) -> str:
@@ -379,10 +494,9 @@ def _unit_math(units) -> str:
     return joiner + '"' + text.replace('"', '\\"') + '"'
 
 
-def value_math(value, precision: int = 3) -> tuple[str, int]:
+def value_math(value, precision: int | None = None) -> tuple[str, int]:
     """A computed value as Typst math, with its binding strength."""
-    if isinstance(value, ureg.Quantity) and value.dimensionless and not value.unitless:
-        value = value.to("dimensionless")  # MPa/psi, mm/m: a plain ratio
+    value = plain_ratio(value)  # MPa/psi, mm/m: a plain ratio
     if isinstance(value, ureg.Quantity):
         number = _number_math(value.magnitude, precision)
         unit = _unit_math(value.units)
@@ -399,6 +513,8 @@ def value_math(value, precision: int = 3) -> tuple[str, int]:
         if text.startswith("-"):
             return text, _NEG
         return text, (_MUL if "dot" in text else _ATOM)
+    if hasattr(type(value), "kip_summary") and "__str__" not in type(value).__dict__:
+        value = value.kip_summary()  # a simulation, a report: say what it is
     return '"' + str(value).replace('"', '\\"') + '"', _ATOM
 
 
@@ -420,7 +536,7 @@ _CMP_OPS = {ast.Gt: ">", ast.GtE: ">=", ast.Lt: "<", ast.LtE: "<=",
 class _Printer:
     """Print one expression either symbolically or with values substituted."""
 
-    def __init__(self, namespace: dict, *, substitute: bool, precision: int):
+    def __init__(self, namespace: dict, *, substitute: bool, precision: int | None):
         self.ns = namespace
         self.substitute = substitute
         self.precision = precision
@@ -448,6 +564,8 @@ class _Printer:
             return value_math(value)
         if name in ("pi", "e") and isinstance(value, float):
             return name, _ATOM
+        if self.substitute and hasattr(type(value), "kip_summary"):
+            return symbol, _ATOM  # a signal or a report has no value to write: it keeps its name
         if self.substitute:
             return value_math(value, self.precision)
         return symbol, _ATOM
@@ -490,7 +608,7 @@ class _Printer:
         sign = "-" if isinstance(head, ast.UnaryOp) and isinstance(head.op, ast.USub) else ""
         written = head.operand.value if isinstance(head, ast.UnaryOp) else head.value
         # As written, not rounded to the display precision: it is an input.
-        return f"{sign}{_number_math(written, None)} {_unit_math(units)}".strip()
+        return f"{sign}{_number_math(written, None, exact=True)} {_unit_math(units)}".strip()
 
     def _BinOp(self, node):
         op = node.op
@@ -508,10 +626,13 @@ class _Printer:
                 base = f"({base})"
             return f"{base}^({self(exponent)})", _POW
         if isinstance(op, ast.Mult):
-            left = self.wrap(node.left, _MUL)
+            left, left_prec = self.print(node.left)
+            negative = left_prec == _NEG  # -R T reads as -(R T): no brackets needed
+            if not negative and left_prec < _MUL:
+                left = f"({left})"
             right_text, right_prec = self.print(node.right)
             right = right_text if right_prec >= _MUL and not right_text.startswith("-") else f"({right_text})"
-            return f"{left} dot {right}", _MUL
+            return f"{left} dot {right}", (_NEG if negative else _MUL)
         left = self.wrap(node.left, _ADD)
         right_text, right_prec = self.print(node.right)
         if right_prec <= _ADD or right_text.startswith("-"):
@@ -575,7 +696,7 @@ def _convert(namespace: dict, name: str, unit: str) -> None:
 
 def _is_input(node, namespace) -> bool:
     """A bare number or quantity literal: nothing to substitute or evaluate."""
-    printer = _Printer(namespace, substitute=False, precision=3)
+    printer = _Printer(namespace, substitute=False, precision=None)
     if printer._is_number(node):
         return True
     return isinstance(node, ast.BinOp) and printer._literal(node) is not None
@@ -593,7 +714,7 @@ def render_calc(
     source: str,
     namespace: dict,
     *,
-    precision: int = 3,
+    precision: int | None = None,
     result_units: list[tuple[str | None, str]] | None = None,
 ) -> RenderedCalc:
     """Render already-executed ``source`` against ``namespace``.
@@ -605,7 +726,7 @@ def render_calc(
     problems = check_calc(tree)
     if problems:
         node, message, _ = problems[0]
-        raise CalcRenderError(f"line {getattr(node, 'lineno', 1)}: {message}")
+        raise CalcRenderError(message, lineno=getattr(node, "lineno", 1))
     assigned = last_assigned_names(source)
     converted: dict[str, str] = {}
     for name, unit in result_units or []:
@@ -622,6 +743,7 @@ def render_calc(
     symbolic = _Printer(namespace, substitute=False, precision=precision)
     substituted = _Printer(namespace, substitute=True, precision=precision)
     equations: list[Equation] = []
+    checks: list[Check] = []
 
     def run(stmts):
         for node in stmts:
@@ -636,22 +758,46 @@ def render_calc(
                 equations.append(Equation(render_name(target.id), parts))
             elif isinstance(node, ast.If):
                 branch(node)
+            elif isinstance(node, ast.Assert):
+                check(node)
+
+    def check(node: ast.Assert):
+        try:
+            passed = bool(eval(compile(ast.Expression(node.test), "<check>", "eval"), namespace))
+        except Exception as e:
+            why = mixes_units(e) and explain_dimensions(node.test, namespace)
+            raise CalcRenderError(f"cannot evaluate the check: {why or f'{type(e).__name__}: {e}'}",
+                                  lineno=node.lineno) from e
+        message = node.msg.value if node.msg is not None else ""
+        label = '"' + (message or "check").replace('"', '\\"') + '"'
+        verdict = ('#text(fill: kip-colors.ok)[OK]' if passed
+                   else '#text(fill: kip-colors.fail)[NOT OK]')
+        row = (f"{label} quad {symbolic(node.test)} quad arrow.r.double quad "
+               f"{substituted(node.test)} quad arrow.r.double quad {verdict}")
+        equations.append(Equation("", [row], kind="check"))
+        names = dict.fromkeys(n.id for n in ast.walk(node.test) if isinstance(n, ast.Name))
+        values = ", ".join(f"{n} = {fmt_quantity(namespace[n])}" for n in names
+                           if n in namespace and not isinstance(namespace[n], ureg.Unit))
+        checks.append(Check(node.lineno, ast.unparse(node.test), values, passed, message))
 
     def branch(node: ast.If):
         try:
             taken = bool(eval(compile(ast.Expression(node.test), "<test>", "eval"), namespace))
         except Exception as e:
-            raise CalcRenderError(f"cannot evaluate the if test: {type(e).__name__}: {e}") from e
+            why = mixes_units(e) and explain_dimensions(node.test, namespace)
+            raise CalcRenderError(f"cannot evaluate the if test: {why or f'{type(e).__name__}: {e}'}",
+                                  lineno=node.lineno) from e
         test = f'{symbolic(node.test)} quad arrow.r.double quad {substituted(node.test)}'
         verdict = '"true"' if taken else '"false"'
-        equations.append(Equation("", [f'"if" quad {test} quad arrow.r.double quad {verdict}']))
+        equations.append(Equation("", [f'"if" quad {test} quad arrow.r.double quad {verdict}'],
+                                  kind="condition"))
         if taken:
             run(node.body)
         elif len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
             branch(node.orelse[0])
         elif node.orelse:
-            equations.append(Equation("", ['"else"']))
+            equations.append(Equation("", ['"else"'], kind="condition"))
             run(node.orelse)
 
     run(tree.body)
-    return RenderedCalc(equations, assigned, converted)
+    return RenderedCalc(equations, assigned, converted, checks)
