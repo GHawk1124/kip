@@ -1,0 +1,14 @@
+# iCEBreaker (iCE40UP5K-SG48): 12 MHz oscillator and the FTDI UART
+set_io clk   35
+set_io rst_n 10
+set_io tx    9
+set_io ready 11
+set_io valid 18
+set_io data[0] 4
+set_io data[1] 2
+set_io data[2] 47
+set_io data[3] 45
+set_io data[4] 3
+set_io data[5] 48
+set_io data[6] 46
+set_io data[7] 44

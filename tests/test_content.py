@@ -79,6 +79,17 @@ def test_table_header_carries_units():
     assert make_table().headers == ["A", "Load (kN)"]
 
 
+def test_numbers_set_right_and_words_left_unless_a_column_says():
+    import numpy as np
+    tbl = Table(["Case", "Load", "Count", "Note", "Ratio"],
+                [("A", 2 * ureg.kN, 3, "", np.float64(0.5)),
+                 ("B", 4 * ureg.kN, 4, "governs", "-")])
+    assert [c.align for c in tbl.columns] == ["left", "right", "right", "left", "right"]
+    chosen = Column("case", "Case", align="center")
+    assert Table([chosen], [("A",)]).columns[0].align == "center"
+    assert chosen.align == "center" and Column("x").align is None  # columns are not changed
+
+
 def test_max_rows_truncates_the_render_only():
     tbl = make_table(max_rows=1)
     rows, hidden = tbl.display_rows()

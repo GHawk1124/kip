@@ -270,6 +270,34 @@ class DependencyGraph:
         return out
 
 
+def redefinitions(blocks: list[Block]) -> list[tuple[str, Block, Block]]:
+    """``(name, first, again)`` for each name a second cell binds again.
+
+    A calculation's value is printed where it is computed; if another cell
+    rebinds the name, prose and tables built later show the other value and
+    the document contradicts itself. Cells that only present -- tables, plots,
+    drawings -- may share scratch names with each other and with the prelude.
+    """
+    first: dict[str, Block] = {}
+    out = []
+    for b in blocks:  # document order: the later cell is the one reported
+        if not b.is_code:
+            continue
+        for name in sorted(b.defs):
+            if name.startswith("_"):
+                continue
+            owner = first.get(name)
+            if owner is None:
+                first[name] = b
+            elif _computes(owner) or _computes(b):
+                out.append((name, owner, b))
+    return out
+
+
+def _computes(block: Block) -> bool:
+    return block.kind not in PRESENTATION_KINDS and block.kind != "prelude"
+
+
 def default_provided() -> frozenset[str]:
     """Names the kernel seeds into every document namespace.
 

@@ -131,8 +131,11 @@ class Block:
         return level
 
     @property
-    def precision(self) -> int:
-        return int(self.meta.get("precision", 3))
+    def precision(self) -> int | None:
+        """Significant figures for this cell's values (``precision=3`` on the
+        marker); ``None`` is kip's default (:func:`kip.units.significant`)."""
+        raw = self.meta.get("precision")
+        return int(raw) if raw else None
 
     def content_hash(self) -> str:
         """Stable hash of everything that affects this block's output."""

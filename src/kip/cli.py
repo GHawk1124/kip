@@ -12,7 +12,6 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.table import Table
 
 def _force_utf8() -> None:
     """Windows consoles default to cp1252, which cannot encode 'mm⁴'.
@@ -36,8 +35,9 @@ app = typer.Typer(
     add_completion=False,
     help="AI-first engineering design documents: Python in, vector PDF out.",
 )
-console = Console()
-err = Console(stderr=True)
+# Soft wrap: a long path or message stays on one line for whoever parses it.
+console = Console(soft_wrap=True)
+err = Console(stderr=True, soft_wrap=True)
 
 
 def _fail(message: str, code: int = 1) -> None:
@@ -64,22 +64,29 @@ def _load(path: Path, strict: bool):
 
 
 def _print_failures(results, doc_path: Path) -> int:
-    """Each failed cell with the file:line where it failed; each cell it blocked."""
-    from rich.markup import escape
+    """Each failed cell at the file:line where it failed, then the cells it blocked."""
     from .doc.kernel import where
 
     failed = [r for r in results if r.failed]
     for r in failed:
-        at = where(r)
-        err.print(f"  [red]{escape(str(doc_path))}: {escape(r.block_id)}: "
-                  f"{escape(r.error or '')}[/red]")
-        if at:
-            err.print(f"    at {escape(at)}", style="dim")
-    for r in results:
-        if r.state == "BLOCKED" and r.reason.startswith("Waiting on"):
-            err.print(f"  [yellow]{escape(r.block_id)}: blocked. "
-                      f"{escape(r.reason)}[/yellow]")
+        err.print(f"  {where(r) or doc_path}: error: [{r.block_id}] {r.error or ''}",
+                  style="red", markup=False)
+    waiting = [r.block_id for r in results
+               if r.state == "BLOCKED" and r.reason.startswith("Waiting on")]
+    if waiting:
+        err.print(f"  blocked until that is fixed: {', '.join(waiting)}",
+                  style="yellow", markup=False)
     return len(failed)
+
+
+def _warn_failed_checks(document, doc_path: Path) -> None:
+    """A failed ``assert`` does not stop a build; it is shown, and named here."""
+    for result in document.results.values():
+        for check in result.assertions:
+            if not check.passed:
+                err.print(f"  {check.file or doc_path}:{check.line}: warning: "
+                          f"[{result.block_id}] check failed: {check.describe()}",
+                          style="yellow", markup=False)
 
 
 def _resolve_doc(path: Path | None) -> Path:
@@ -101,7 +108,7 @@ def _resolve_doc(path: Path | None) -> Path:
 def new(
     name: str = typer.Argument(..., help="Project directory to create."),
     title: str = typer.Option(None, "--title", "-t", help="Document title."),
-    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, component, or showcase (includes CAD)."),
+    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, component, showcase (includes CAD), discovery (chemistry and biology), circuit (schematic to fabrication), or fpga (HDL to timing closure)."),
     columns: int = typer.Option(None, "--columns", "-c", min=1, max=2, help="Default page columns (1 or 2)."),
     source: str = typer.Option(None, "--source", help="kip package path or URL; defaults to this installation's source."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Skip uv sync."),
@@ -132,10 +139,19 @@ def new(
 @app.command()
 def skill(
     output: Path = typer.Option(None, "--output", "-o", help="Save SKILL.md to this path instead of printing it."),
+    install: Path = typer.Option(None, "--install", help="Install or refresh the skill in this project folder "
+                                 "(.claude/skills and .agents/skills), adding AGENTS.md and CLAUDE.md if missing."),
 ) -> None:
     """Display the bundled LLM authoring skill as plain Markdown."""
     from .resources import SKILL
 
+    if install is not None:
+        from .scaffold import install_guide
+        if not install.is_dir():
+            _fail(f"no such folder: {install}")
+        for written in install_guide(install):
+            console.print(f"[green]wrote[/green] {written}")
+        return
     if output is None:
         typer.echo(SKILL.read_text(encoding="utf-8"))
     else:
@@ -180,6 +196,7 @@ def build(
 
     for d in document.warnings:
         err.print(f"  {d.format(doc_path)}", style="yellow", markup=False)
+    _warn_failed_checks(document, doc_path)
     console.print(
         f"[green]built[/green] {written} "
         f"({written.stat().st_size:,} B, {len(document.ordered_blocks())} blocks, "
@@ -204,111 +221,110 @@ def preview(
 @app.command()
 def check(
     path: Path = typer.Argument(None, help="doc.py (default: ./doc.py)"),
-    render: bool = typer.Option(False, "--render", help="Also compile Typst without writing a PDF or exports."),
+    render: bool = typer.Option(True, "--render/--no-render",
+                                help="Compile the Typst too (no PDF or exports are written); "
+                                     "--no-render skips it for a faster check."),
+    as_json: bool = typer.Option(False, "--json",
+                                 help="Print problems, layout notes and every cell's values as JSON."),
 ) -> None:
-    """Validate and execute without rendering. Exits non-zero on any error."""
+    """Validate, execute and compile without writing anything. Exits non-zero on any error."""
+    import json
+
+    from . import report
+    from .doc.kernel import _all_requirements
+
     doc_path = _resolve_doc(path)
-    document = _load(doc_path, strict=False)
-
-    n_err = len(document.errors)
-    n_warn = len(document.warnings)
-    for d in document.diagnostics:
-        style = "red" if d.severity == "error" else "yellow"
-        err.print(f"  {d.format(doc_path)}", style=style, markup=False)
-
-    from rich.markup import escape
-
-    n_failed = _print_failures(list(document.results.values()), doc_path)
-
-    unresolved = {k: v for k, v in document.graph.unresolved.items() if v}
-    n_warn += len(unresolved)
-    for bid, names in unresolved.items():
-        err.print(f"  [yellow]{escape(str(doc_path))}: {escape(bid)}: "
-                  f"undefined: {escape(', '.join(sorted(names)))}[/yellow]")
-
-    # requirement compliance is part of the verdict: a failed or unverified
-    # requirement is a failed check, not a warning
-    req_failures = 0
-    from kip.req import Requirements
-
-    seen: set[int] = set()
-    for value in document.namespace.values():
-        if not isinstance(value, Requirements) or id(value) in seen:
-            continue
-        seen.add(id(value))
-        passed, failed_n, unverified = value.status()
-        for check in value.checks:
-            if not check.passed:
-                err.print(f"  [red]{escape(value.item.id)}: {escape(check.req_id)} "
-                          f"FAILED: {escape(str(check.value))} "
-                          f"{escape(check.criterion)}[/red]")
-        for rid in unverified:
-            err.print(f"  [red]{escape(value.item.id)}: {escape(rid)} "
-                      f"is not verified by this document[/red]")
-        req_failures += failed_n + len(unverified)
-        if not failed_n and not unverified:
-            console.print(
-                f"[green]requirements[/green] {escape(value.item.id)}: "
-                f"{passed} verified, 0 open")
-
-    total_err = n_err + n_failed + req_failures
-    for extension in document.extensions:
-        for stage, (state, reason) in extension.outstanding.items():
-            err.print(f"{stage}: {state} - {reason}", markup=False, soft_wrap=True)
-        total_err += len(extension.outstanding)
-    if render and not n_err and not n_failed:
-        from .render import emit, compile_pdf
+    if as_json:
+        from .doc import build
+        from .doc.loader import KipSyntaxError
+        try:
+            document = build(doc_path, strict=False)
+        except KipSyntaxError as e:  # a marker kip cannot read: still answer in JSON
+            problem = report.Problem("error", e.args[0], file=e.path, line=e.lineno)
+            typer.echo(json.dumps({"document": str(doc_path), "ok": False, "errors": 1,
+                                   "warnings": 0, "problems": [problem.__dict__],
+                                   "notes": [], "blocks": []}, ensure_ascii=False, indent=1))
+            raise typer.Exit(1)
+    else:
+        document = _load(doc_path, strict=False)
+    found = report.problems(document, doc_path)
+    notes: list[str] = []
+    if render and not document.errors and not any(r.failed for r in document.results.values()):
         from .render.layout import Layout
         sidecar = doc_path.parent / "layout.toml"
         layout = Layout.load(sidecar) if sidecar.exists() else Layout()
-        try:
-            compile_pdf(emit(document, layout))
-        except (ValueError, OSError) as exc:
-            err.print(str(exc), style="red", markup=False, soft_wrap=True)
-            total_err += 1
-    if total_err:
-        _fail(f"{total_err} error(s), {n_warn} warning(s)")
-    console.print(
-        f"[green]ok[/green] {len(document.ordered_blocks())} blocks, "
-        f"{n_warn} warning(s)"
-    )
+        laid_out, notes = report.layout(document, doc_path, layout)
+        found += laid_out
+    errors = sum(p.severity == "error" for p in found)
+    warnings = len(found) - errors
+
+    if as_json:
+        typer.echo(json.dumps(report.as_json(document, doc_path, found, notes),
+                              ensure_ascii=False, indent=1))
+        if errors:
+            raise typer.Exit(1)
+        return
+
+    for problem in found:
+        err.print("  " + problem.format(), markup=False,
+                  style="red" if problem.severity == "error" else "yellow")
+        if problem.detail:
+            err.print(problem.detail, style="dim", markup=False)
+    waiting = [r.block_id for r in document.results.values()
+               if r.state == "BLOCKED" and r.reason.startswith("Waiting on")]
+    if waiting:
+        err.print(f"  blocked until that is fixed: {', '.join(waiting)}",
+                  style="yellow", markup=False)
+    for note in notes:
+        console.print(f"  layout: {note}", style="dim", markup=False)
+    for reqs in _all_requirements(document.namespace):
+        passed, failed_n, unverified = reqs.status()
+        if not failed_n and not unverified:
+            console.print(f"[green]requirements[/green] {reqs.item.id}: {passed} verified, 0 open",
+                          highlight=False)
+    checks = [c for r in document.results.values() for c in r.assertions]
+    if checks and all(c.passed for c in checks):
+        console.print(f"[green]checks[/green] {len(checks)} passed")
+    if errors:
+        _fail(f"{errors} error(s), {warnings} warning(s)")
+    console.print(f"[green]ok[/green] {len(document.ordered_blocks())} blocks, "
+                  f"{warnings} warning(s)")
 
 
 @app.command()
 def show(
     path: Path = typer.Argument(None, help="doc.py (default: ./doc.py)"),
+    as_json: bool = typer.Option(False, "--json", help="Print the cells as JSON."),
 ) -> None:
-    """Print the block table: kind, dependencies and computed values."""
+    """Print every cell's state, computed values and checks."""
+    import json
+
+    from . import report
+
     doc_path = _resolve_doc(path)
     document = _load(doc_path, strict=False)
-
-    table = Table(show_header=True, header_style="bold")
-    for col in ("order", "id", "kind", "depends on", "defines", "value"):
-        table.add_column(col)
-
-    position = {b: i for i, b in enumerate(document.graph.order)}
-    blocks = document.ordered_blocks()
-    for block in blocks:
-        result = document.results.get(block.id)
-        deps = sorted(d for d in document.graph.edges.get(block.id, ()) if d != "__prelude__")
-        from rich.markup import escape
-
-        from .units import fmt_quantity
-
-        vals = escape(", ".join(
-            f"{k}={fmt_quantity(v)}"
-            for k, v in list((result.values if result else {}).items())[:2]
-        ))
-        if result and result.state != "PRESENT":
-            vals = escape(f"{result.state}: {result.reason}")
-        table.add_row(
-            str(position.get(block.id, "")), block.id, block.kind,
-            ", ".join(deps) or "-",
-            ", ".join(sorted(block.defs)[:3]) or "-",
-            (vals[:44] if result and result.ok
-             else f"[red]{escape(((result.error if result else None) or 'not run')[:40])}[/red]"),
-        )
-    console.print(table)
+    entries = report.blocks(document)
+    if as_json:
+        typer.echo(json.dumps(entries, ensure_ascii=False, indent=1))
+        return
+    for entry in entries:
+        label = f' "{entry["label"]}"' if entry["label"] else ""
+        console.print(f"{entry['kind']} {entry['id']}{label}  {doc_path}:{entry['line']}",
+                      style="bold", markup=False, highlight=False)
+        if entry["state"] == "failed":
+            console.print(f"  FAILED: {entry['error']}", style="red", markup=False)
+        elif entry["state"] != "ok":
+            console.print(f"  {entry['state'].upper()}: {entry.get('reason', '')}",
+                          style="yellow", markup=False)
+        for name, value in entry["values"].items():
+            console.print(f"  {name} = {value['text']}", markup=False, highlight=False)
+        for c in entry.get("checks", []):
+            what = f" ({c['message']})" if c["message"] else ""
+            console.print(f"  check {c['condition']}{what}: {'OK' if c['passed'] else 'NOT OK'}",
+                          markup=False, highlight=False,
+                          style=None if c["passed"] else "red")
+        if entry["uses"]:
+            console.print(f"  uses {', '.join(entry['uses'])}", style="dim", markup=False)
 
 
 @app.command("layout")

@@ -246,3 +246,134 @@ def test_opening_text_wraps_beside_title_fields_then_returns_full_width():
     for line in lines:
         y = line["spans"][0]["origin"][1]*25.4/72 - 2.2
         assert y/5 == pytest.approx(round(y/5), abs=.002)
+
+
+# Everything below measures where text lands, because a block that is a fraction
+# of a cell too tall moves every later line on its page off the rules.
+
+def lines(doc, size=None):
+    """(page, baseline mm, text) per text line, set by its largest non-math span."""
+    for number, page in enumerate(doc):
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                spans = [s for s in line["spans"] if s["text"].strip() and "Math" not in s["font"]]
+                if spans:
+                    span = max(spans, key=lambda s: s["size"] * len(s["text"]))
+                    if size is None or abs(span["size"] - size) < .01:
+                        yield (number, span["origin"][1] * 25.4 / 72,
+                               "".join(s["text"] for s in line["spans"]))
+
+
+def cells_from_rule(y, step=5):
+    return (y - (279.4 % step) / 2) / step
+
+
+def test_display_content_in_prose_keeps_later_text_on_the_rules():
+    filler = "words that wrap the paragraph onto more lines " * 3
+    doc = pdf('''from kip import *
+# %% text t "Prose"
+"""Before the display content.
+
+$ sigma = (M c) / I = (P L / 4) (h / 2) / (b h^3 / 12) $
+
+After the equation.
+
+#quote(block: true)[A quoted sentence.]
+
+After the quote.
+
+#table(columns: 3, [a], [b], [c], [1], [2], [3])
+
+After the table.
+
+Inline $sigma = P / (d t)$ and $display(P / (d t))$ fractions, ''' + filler + '''end.
+"""
+# %% text next "Next"
+"""The next cell."""
+''')
+    body = list(lines(doc, size=10))
+    assert any("next cell" in text for _, _, text in body)
+    assert len([1 for _, _, text in body if "wrap the paragraph" in text]) >= 2
+    cells = {text.strip(): y for _, y, text in body if len(text.strip()) == 1}
+    assert cells["1"] - cells["a"] == pytest.approx(5, abs=.01)  # native rows are whole cells
+    for _, y, text in body:
+        if len(text.strip()) > 1:
+            assert cells_from_rule(y) == pytest.approx(round(cells_from_rule(y)), abs=.002), text
+
+
+def test_paragraphs_are_separated_by_one_blank_row():
+    doc = pdf('# %% text t\n"""First paragraph.\n\nSecond paragraph.\n\n- a list\n\nAfter the list."""')
+    y = {text.strip(): y for _, y, text in lines(doc, size=10)}
+    assert y["Second paragraph."] - y["First paragraph."] == pytest.approx(10, abs=.01)
+    assert y["After the list."] - y["• a list"] == pytest.approx(10, abs=.01)
+
+
+def test_headings_sit_on_the_rules_like_body_text():
+    doc = pdf('# %% text t "Section" section=1\n"""## Subsection\n\nBody.\n\n### Third level\n\nMore body."""')
+    found = 0
+    for _, y, text in lines(doc):
+        if any(word in text for word in ("Section", "Subsection", "Third level")):
+            assert cells_from_rule(y) == pytest.approx(round(cells_from_rule(y)), abs=.002), text
+            found += 1
+    assert found == 3
+
+
+@pytest.mark.parametrize("intro", [True, False])
+def test_the_title_and_subtitle_sit_on_the_rules(intro):
+    source = '# %% kip.text id=t\n"""Body."""' if intro else '# %% calc c\nx = 2'
+    doc = pdf(source, title="A title long enough to wrap onto a second line beside the fields",
+              subtitle="Subtitle", author="Author", date="2026-10-09")
+    found = [y for size in (17, 9.5) for _, y, _ in lines(doc, size=size)]
+    assert len(found) == 3  # two title lines and the subtitle
+    for y in found:
+        assert cells_from_rule(y) == pytest.approx(round(cells_from_rule(y)), abs=.002), y
+    assert found[1] - found[0] == pytest.approx(10, abs=.01)
+
+
+def test_wrapped_table_cells_keep_the_grid_pitch_and_share_a_baseline():
+    doc = pdf('''from kip import *
+# %% table t
+Table(columns=[Column("id", "ID", align="left"), Column("text", "Requirement", align="left"),
+               Column("status", "Status", align="left")],
+      rows=[("R-001", "The component shall " + "carry the design load with margin " * 10, "PASS")])
+''')
+    rows = {}
+    for _, y, text in lines(doc, size=8.4):
+        rows.setdefault(round(y, 2), []).append(text)
+    baselines = sorted(rows)
+    assert len(baselines) >= 3
+    assert [b - a for a, b in zip(baselines, baselines[1:])] == pytest.approx([5] * (len(baselines) - 1), abs=.01)
+    first = rows[baselines[0]]
+    assert any("R-001" in t for t in first) and any("PASS" in t for t in first)
+
+
+def test_controlled_rows_are_spaced_like_input_rows():
+    from kip.render.emitter import TYPST_LIB
+    rows = ", ".join(f'(name: [$P_{i}$], value: "{i} kN", source: "REQ-{i}", owner: "LUG")' for i in range(3))
+    main = ('#import "kip.typ": *\n#show: kip-doc.with()\n'
+            f'#kip-controlled(id: "c", label: "Loads", rows: ({rows},))\n')
+    doc = pymupdf.open(stream=compile_pdf({"main.typ": main.encode(), "kip.typ": (TYPST_LIB / "kip.typ").read_bytes()}))
+    y = sorted(y for _, y, text in lines(doc) if " kN" in text)
+    assert [b - a for a, b in zip(y, y[1:])] == pytest.approx([5, 5], abs=.01)
+
+
+def test_opening_text_keeps_a_table_intact():
+    doc = pdf('# %% text scope "Scope"\n"""Covers:\n\n#table(columns: 2, [CELLA], [CELLB])\n\nEnd."""',
+              title="Title", author="Author", document="DOC-1", revision="A")
+    spans = {s["text"].strip(): s["bbox"] for b in doc[0].get_text("dict")["blocks"]
+             for l in b.get("lines", []) for s in l["spans"]}
+    assert "CELLA" in spans and "CELLB" in spans
+    assert spans["CELLB"][0] - spans["CELLA"][2] > 5
+
+
+@pytest.mark.parametrize("words", [1, 9, 18])
+def test_opening_text_split_beside_the_title_keeps_one_blank_row(words):
+    first = " ".join(["Opening"] + ["words"] * words) + " END1."
+    doc = pdf(f'# %% text scope "Scope"\n"""{first}\n\n- LIST1 item\n- next item\n\nAfter."""',
+              title="Title", project="P-1", document="DOC-1", author="Author", checker="C", revision="A", date="2026-10-09")
+    y = {}
+    for _, baseline, text in lines(doc, size=10):
+        for word in ("END1", "LIST1"):
+            if word in text:
+                y[word] = baseline
+    assert y["LIST1"] - y["END1"] == pytest.approx(10, abs=.01)

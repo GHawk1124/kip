@@ -38,11 +38,15 @@ class BlockResult:
     quantities: dict = field(default_factory=dict)
     derived: object | None = None
     checks: list = field(default_factory=list)   # verification results
+    #: ``assert`` checks in a calculation (math.calc.Check), with absolute lines
+    assertions: list = field(default_factory=list)
     #: (name, value, controlled-variable) triples for a kip.controlled block
     controlled: list = field(default_factory=list)
     values: dict[str, object] = field(default_factory=dict)
     error: str | None = None
     traceback: str | None = None
+    #: ``file:line`` of a failure found without a traceback (a calc that will not render)
+    location: str | None = None
     #: PRESENT, or OPEN (expected material missing) / BLOCKED (waiting on inputs)
     state: str = "PRESENT"
     reason: str = ""
@@ -61,7 +65,7 @@ class ExecutionError(Exception):
         blocked = [r for r in results if r.state == "BLOCKED"]
         super().__init__(
             f"{len(failures)} block(s) failed in {path}:\n"
-            + "\n".join(f"  [{r.block_id}] {r.error}" for r in failures)
+            + "\n".join(f"  {where(r) or path}: [{r.block_id}] {r.error}" for r in failures)
             + (f"\n  ({len(blocked)} more waiting on them)" if blocked else "")
         )
 
@@ -117,7 +121,7 @@ class Document:
 
 def _render_text(block: Block, ns: dict) -> str:
     """Substitute ``@val:name`` with live values; leave other cites for Typst."""
-    from ..prose import CITE_RE, literal, read_text, transform
+    from ..prose import CITE_RE, escape_literals, literal, read_text, transform
     import re
 
     def sub(m):
@@ -129,7 +133,8 @@ def _render_text(block: Block, ns: dict) -> str:
         return m.group(0)
 
     pattern = re.compile(CITE_RE.pattern + r"(?P<tail>;?)")
-    return transform(read_text(block.source, ns), lambda part: pattern.sub(sub, part))
+    text = escape_literals(read_text(block.source, ns))
+    return transform(text, lambda part: pattern.sub(sub, part))
 
 
 _EXPECTED = {"plot": "Figure", "table": "Table", "draw": "Drawing",
@@ -142,17 +147,22 @@ def _pick_content(block: Block, ns: dict, before: set[str], expression=None):
     Source order, not set order: iterating ``block.defs`` (a frozenset) would
     make the choice -- and therefore the rendered PDF -- unstable.
     """
-    from ..content import Drawing, Figure, Sources, Table
+    from ..content import Drawing, Figure, Listing, Sources, Table
     from ..math.calc import last_assigned_names
     from ..req import Requirements
     from ..sheets import Constants, Sheet
 
-    want = {"plot": Figure, "table": Table, "draw": Drawing,
+    want = {"plot": Figure, "table": Table, "draw": (Drawing, Listing),
             "sources": Sources, "requirements": Requirements}[block.kind]
 
     def content(value):
         if want is Table and isinstance(value, (Constants, Sheet)):
             return value.table()
+        if hasattr(type(value), "kip_content"):
+            value = value.kip_content(block.kind)  # a molecule, schematic, board, signal...
+        else:
+            from ..adapters import adapt
+            value = adapt(value, block.kind)  # schemdraw, matplotlib, SKiDL
         return value if isinstance(value, want) else None
 
     if expression is not None:
@@ -209,6 +219,12 @@ def execute(doc: Document) -> Document:
         ns["__file__"] = str(doc.path.resolve()) if doc.path else "<string>"
         doc.namespace = ns
         doc.blocks = list(doc.authored)
+        if doc.path and not doc.path.name.startswith("<"):
+            # Cells are compiled under doc.py's own name and lines, so a
+            # traceback shows the author's line, as built, not the file on disk.
+            import linecache
+            linecache.cache[str(doc.path)] = (len(doc.source), None,
+                                              doc.source.splitlines(True), str(doc.path))
         for extension in doc.extensions:
             ns.update(extension.load(doc))  # external files: re-read every build
         _execute_ordered(doc, ns)
@@ -254,7 +270,8 @@ def _execute_ordered(doc, ns):
         if reason is not None:
             results[bid] = BlockResult(bid, block.kind, state="BLOCKED", reason=reason)
             continue
-        results[bid] = _run_block(block, ns, draft=doc.draft)
+        filename = str(doc.path) if doc.path and not doc.path.name.startswith("<") else None
+        results[bid] = _run_block(block, ns, draft=doc.draft, filename=filename)
         _report_notes(doc, block)
 
     # Presentation-only requests can precede the quantities they describe.
@@ -329,8 +346,64 @@ def _new_checks(ns: dict, before: list[int]) -> list:
     return out
 
 
-def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
+def _failure(e: Exception) -> str:
+    return str(e) if isinstance(e, CalcRenderError) else f"{type(e).__name__}: {e}"
+
+
+def _statement_at(tree, line: int):
+    """The author's simple statement spanning ``line``, or the ``if`` test there.
+
+    The first, not the last: a ``# -> unit`` conversion kip inserts after an
+    assignment carries the assignment's line too.
+    """
+    import ast
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.If, ast.While)):
+            node = node.test
+        elif not isinstance(node, ast.stmt) or hasattr(node, "body"):
+            continue
+        if node.lineno <= line <= (node.end_lineno or node.lineno):
+            return node
+    return None
+
+
+def _explain_dimensions(e: Exception, filename: str, tree, ns: dict, renders_math: bool) -> str | None:
+    """Which ``+``, ``-`` or comparison mixed dimensions, innermost frame first.
+
+    Only arithmetic kip renders is looked at again: a calc cell's own lines,
+    and the body of an ``@calculation`` function -- in its own file, with the
+    values of that call.
+    """
+    import ast
+    import linecache
+    from ..authoring import calculation_code
+    from ..math.calc import explain_dimensions
+
+    frames, tb = [], e.__traceback__
+    while tb is not None:
+        frames.append((tb.tb_frame, tb.tb_lineno))
+        tb = tb.tb_next
+    for frame, line in reversed(frames):
+        code = frame.f_code
+        if code in calculation_code:
+            try:
+                source = ast.parse("".join(linecache.getlines(code.co_filename)))
+            except SyntaxError:
+                continue
+            statement, values = _statement_at(source, line), {**frame.f_globals, **frame.f_locals}
+        elif renders_math and code.co_filename == filename:
+            statement, values = _statement_at(tree, line), ns
+        else:
+            continue
+        explained = statement is not None and explain_dimensions(statement, values)
+        if explained:
+            return explained
+    return None
+
+
+def _run_block(block: Block, ns: dict, *, draft=False, filename: str | None = None) -> BlockResult:
     res = BlockResult(block_id=block.id, kind=block.kind)
+    filename = filename or f"<{block.id}>"
     before = set(ns)
     checks_before = [len(r.checks) for r in _all_requirements(ns)]
 
@@ -341,18 +414,20 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
         try:
             import ast
 
-            tree = ast.parse(block.source, f"<{block.id}>")
+            tree = ast.parse(block.source, filename)
+            ast.increment_lineno(tree, block.body_start - 1)
             if block.renders_math:
-                from ..math.calc import display_units, with_conversions
+                from ..math.calc import display_units, strip_checks, with_conversions
                 with_conversions(tree.body, display_units(block.source)[1])
+                strip_checks(tree.body)
             tail = None
             if (tree.body and (block.has_content or block.kind in ("calc", "calculation"))
                     and isinstance(tree.body[-1], ast.Expr)):
                 tail = tree.body.pop().value
             with collect_reads() as reads:
-                exec(compile(tree, f"<{block.id}>", "exec"), ns)
+                exec(compile(tree, filename, "exec"), ns)
                 if tail is not None:
-                    expression = eval(compile(ast.Expression(tail), f"<{block.id}>", "eval"), ns)
+                    expression = eval(compile(ast.Expression(tail), filename, "eval"), ns)
         except Exception as e:
             from .extension import UnavailableInput
             if draft and (isinstance(e, UnavailableInput) or
@@ -361,11 +436,15 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
                 res.reason = str(e)
                 return res
             res.ok = False
-            res.error = f"{type(e).__name__}: {e}"
+            res.error = _failure(e)
             res.traceback = _user_traceback()
+            from ..math.calc import mixes_units
+            if mixes_units(e):
+                res.error = _explain_dimensions(e, filename, tree, ns, block.renders_math) or res.error
             return res
 
     new_names = set(ns) - before
+    origin = (filename, block.body_start)  # where rendered line 1 is
     # Engineering variables routinely reuse unit names (A, L, W, ...).
     # Include bindings assigned by this block even when a name already existed.
     res.values = {n: ns[n] for n in sorted(new_names | set(block.defs))
@@ -392,9 +471,25 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
                 raise CalcRenderError("bind one decorated calculation per cell")
             calculation = calculations[0]
             res.calculation = calculation
-            rendered = render_calc(calculation.source, calculation.values,
+            origin = calculation.origin
+            rendered = render_calc(calculation.source, {**calculation.constants, **calculation.values},
                                    precision=calculation.precision)
             res.equations = rendered.equations
+            file, first = calculation.origin
+            res.assertions = [replace(c, line=first - 1 + c.line, file=file)
+                              for c in rendered.checks]
+            rest = _beside_calculation(block.source, calculation, ns)
+            if rest.strip():  # the cell's own lines after it: checks on its results, mostly
+                from ..math.calc import display_units
+                shown, annotated = display_units(rest)
+                more = render_calc(shown, ns, precision=block.precision,
+                                   result_units=annotated + block.result_units)
+                res.equations = res.equations + more.equations
+                res.assertions += [replace(c, line=block.body_start - 1 + c.line)
+                                   for c in more.checks]
+                for n in more.converted:
+                    if n in ns:
+                        res.values[n] = ns[n]
         elif block.renders_math and block.source.strip():
             from ..math.calc import display_units
             # `# -> MPa` beside the equation says what unit to read it in.
@@ -402,6 +497,8 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
             rendered = render_calc(shown, ns, precision=block.precision,
                                    result_units=annotated + block.result_units)
             res.equations = rendered.equations
+            res.assertions = [replace(c, line=block.body_start - 1 + c.line)
+                              for c in rendered.checks]
             # refresh values after any unit conversion
             for n in rendered.converted:
                 if n in ns:
@@ -445,6 +542,18 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
                     f"{_EXPECTED[block.kind]} object; none of "
                     f"{sorted(block.defs) or ['(nothing)']} is one"
                 )
+        if block.kind in ("calc", "calculation") and block.meta.get("result"):
+            values = res.calculation.values if res.calculation is not None else res.values
+            missing = [n for n in result_names(block, res) if n not in values]
+            if missing:
+                from ..math.calc import last_assigned_names
+                computed = last_assigned_names(res.calculation.source if res.calculation
+                                               else block.source)
+                origin = (filename, block.marker_line)  # the marker carries result=
+                raise CalcRenderError(
+                    f"result={block.meta['result']} names {', '.join(missing)}, which this "
+                    f"cell does not compute (it computes {', '.join(computed) or 'nothing'})",
+                    lineno=1)
         if res.calculation is not None:
             res.quantities = res.calculation.symbols
         elif block.kind in ("given", "controlled", "calc"):
@@ -457,12 +566,47 @@ def _run_block(block: Block, ns: dict, *, draft=False) -> BlockResult:
     except CalcRenderError as e:
         res.ok = False
         res.error = str(e)
+        if e.lineno is not None:
+            res.location = f"{origin[0]}:{origin[1] - 1 + e.lineno}"
     except Exception as e:
         res.ok = False
-        res.error = f"{type(e).__name__}: {e}"
+        res.error = _failure(e)
         res.traceback = _user_traceback()
 
     return res
+
+
+def _beside_calculation(source: str, calculation, ns: dict) -> str:
+    """A calc cell's source with the statement that bound ``calculation`` blanked.
+
+    Lines keep their numbers, so a failing check still points at its line.
+    """
+    import ast
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    binding = [s for s in tree.body if isinstance(s, ast.Assign) and len(s.targets) == 1
+               and isinstance(s.targets[0], ast.Name) and ns.get(s.targets[0].id) is calculation]
+    if not binding and tree.body and isinstance(tree.body[-1], ast.Expr):
+        binding = [tree.body[-1]]  # shown bare as the cell's last line
+    for stmt in binding:
+        for k in range(stmt.lineno - 1, stmt.end_lineno or stmt.lineno):
+            lines[k] = ""
+    return "\n".join(lines)
+
+
+def result_names(block: Block, result: BlockResult) -> list[str]:
+    """The names a calc cell's result boxes show: its ``result=``, else its last value."""
+    from ..math.calc import last_assigned_names
+
+    calculation = result.calculation
+    source = calculation.source if calculation is not None else block.source
+    values = calculation.values if calculation is not None else result.values
+    wanted = block.meta.get("result", "").strip()
+    if wanted.lower() == "none":
+        return []
+    if wanted:
+        return [n.strip() for n in wanted.split(",") if n.strip()]
+    return [n for n in last_assigned_names(source) if n in values][-1:]
 
 
 def _user_traceback() -> str:
@@ -473,6 +617,9 @@ def _user_traceback() -> str:
 def where(result: BlockResult) -> str | None:
     """``file:line`` of the innermost frame outside kip itself, if any."""
     import re
+
+    if result.location:
+        return result.location
 
     import sysconfig
 
@@ -488,10 +635,32 @@ def where(result: BlockResult) -> str | None:
     return None
 
 
-def _citation_diagnostics(blocks: list[Block], path) -> list[Diagnostic]:
-    """Warn about @blk:/@val: references that point at nothing."""
+def _cite_line(block: Block, kind: str, target: str) -> int:
+    """The doc.py line holding ``@kind:target`` in ``block``."""
+    import re
+    pattern = re.compile(rf"@{kind}:{re.escape(target)}(?![A-Za-z0-9_\-])")
+    for i, line in enumerate(block.source.splitlines()):
+        if pattern.search(line):
+            return block.body_start + i
+    return block.body_start
+
+
+def _unknown_cite(block: Block, kind: str, target: str, what: str,
+                  known) -> Diagnostic:
+    import difflib
+    close = difflib.get_close_matches(target, sorted(known), n=1)
+    hint = f"did you mean @{kind}:{close[0]}?" if close else ""
+    return Diagnostic("error", block.id, _cite_line(block, kind, target),
+                      f"@{kind}:{target} refers to {what}", hint)
+
+
+def _citation_diagnostics(blocks: list[Block], provided=frozenset()) -> list[Diagnostic]:
+    """@blk:/@val: references that point at nothing.
+
+    A typo would otherwise ship as plain text or ``?name?`` in the PDF.
+    """
     known = {b.id for b in blocks}
-    defined: set[str] = set()
+    defined: set[str] = set(provided)
     for b in blocks:
         defined |= set(b.defs)
 
@@ -499,17 +668,80 @@ def _citation_diagnostics(blocks: list[Block], path) -> list[Diagnostic]:
     for b in blocks:
         for kind, target in b.cites:
             if kind == "blk" and target not in known:
-                out.append(Diagnostic(
-                    "warning", b.id, b.body_start,
-                    f"@blk:{target} refers to no such block",
-                    "rendered as plain text; check the block id",
-                ))
+                out.append(_unknown_cite(b, kind, target, "no such block", known))
             elif kind == "val" and target not in defined:
-                out.append(Diagnostic(
-                    "warning", b.id, b.body_start,
-                    f"@val:{target} refers to no defined value",
-                    "rendered as ?{}? in the document".format(target),
-                ))
+                out.append(_unknown_cite(b, kind, target, "no defined value", defined))
+    return out
+
+
+def _source_citation_diagnostics(doc: Document) -> list[Diagnostic]:
+    """@src:/@req: references to entries no loaded workbook holds.
+
+    Both are only known once the document has run. While a reference list or
+    requirements file is still OPEN in a draft, its citations are not judged.
+    """
+    from ..content import Sources
+
+    cites = [(b, kind, target) for b in doc.blocks for kind, target in b.cites
+             if kind in ("src", "req")]
+    if not cites:
+        return []
+    keys: set[str] = set()
+    sources_ready = True
+    for b in doc.blocks:
+        result = doc.results.get(b.id)
+        if b.kind != "sources" or result is None:
+            continue
+        if isinstance(result.content, Sources):
+            keys |= set(result.content)
+        else:
+            sources_ready = False
+    from ..req import Requirements
+    loaded = _all_requirements(doc.namespace) + [
+        r.content for r in doc.results.values() if isinstance(r.content, Requirements)]
+    ids: set[str] = set()
+    for reqs in loaded:
+        ids |= set(reqs.all_requirements())
+    from .extension import MissingInput
+    reqs_ready = not any(isinstance(v, MissingInput) for v in doc.namespace.values())
+
+    out: list[Diagnostic] = []
+    for b, kind, target in cites:
+        if kind == "src" and sources_ready and target not in keys:
+            what = "no reference in this document's sources" if keys else \
+                "no reference; this document has no sources cell"
+            out.append(_unknown_cite(b, kind, target, what, keys))
+        elif kind == "req" and reqs_ready and ids and target not in ids:
+            out.append(_unknown_cite(b, kind, target, "no loaded requirement", ids))
+    return out
+
+
+def _binding_line(block: Block, name: str) -> int:
+    """The doc.py line where ``block`` first binds ``name``."""
+    import ast
+    try:
+        tree = ast.parse(block.source)
+    except SyntaxError:
+        return block.body_start
+    lines = [n.lineno for n in ast.walk(tree)
+             if (isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load) and n.id == name)
+             or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == name)
+             or (isinstance(n, ast.alias) and (n.asname or n.name).split(".")[0] == name)]
+    return block.body_start - 1 + min(lines, default=1)
+
+
+def _redefinition_diagnostics(blocks: list[Block]) -> list[Diagnostic]:
+    """A name a calculation computes, bound again by another cell."""
+    from .graph import redefinitions
+    out = []
+    for name, first, again in redefinitions(blocks):
+        cell = "the prelude" if first.kind == "prelude" else f"cell {first.id!r}"
+        out.append(Diagnostic(
+            "error", again.id, _binding_line(again, name),
+            f"{name!r} is already defined in {cell} (line {_binding_line(first, name)})",
+            "give this value its own name; with two definitions, cells built "
+            "later show a different value from the one printed where it was computed",
+        ))
     return out
 
 
@@ -558,10 +790,12 @@ def build(
     diags = validate_all(blocks, p)
     diags.extend(Diagnostic("warning", b.id, b.marker_line, note)
                  for b in blocks for note in b.notes)
-    diags.extend(_citation_diagnostics(blocks, p))
+    diags.extend(_citation_diagnostics(blocks, provided))
     diags.extend(_early_use_diagnostics(blocks, graph))
+    diags.extend(_redefinition_diagnostics(blocks))
     from .validate import unit_diagnostics
     diags.extend(unit_diagnostics(blocks))
+    diags = list(dict.fromkeys(diags))  # one mistake, said once: f("a", "b") is one refusal
     doc = Document(path=p, source=text, blocks=blocks, graph=graph, diagnostics=diags,
                    extensions=extensions)
 
@@ -571,6 +805,7 @@ def build(
         raise ValidationError(doc.errors, p)
 
     execute(doc)
+    doc.diagnostics.extend(_source_citation_diagnostics(doc))
 
     if strict and doc.errors:
         from .validate import ValidationError

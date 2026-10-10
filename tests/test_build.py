@@ -7,6 +7,7 @@ import pytest
 
 from kip.doc import build
 from kip.doc.kernel import ExecutionError
+from kip.doc.validate import ValidationError
 from kip.render import emit, render
 from kip.render.layout import Layout, PageSpec, auto_layout
 from kip.render.pdf import block_geometry, compile_pdf, measure_heights
@@ -104,7 +105,70 @@ MS = a / b - 1
 '''
     doc = build(source=src, path="doc.py")
     pdf = pymupdf.open(stream=compile_pdf(emit(doc)), filetype="pdf")
-    assert "Margin 0.636." in "".join(page.get_text() for page in pdf)
+    assert "Margin 0.6356." in "".join(page.get_text() for page in pdf)
+
+
+def test_ratios_of_mixed_units_are_reduced_to_plain_numbers():
+    """100 MPa / 10 ksi is 1.45, not "10 MPa/ksi"; angles and percent keep their units."""
+    doc = build(source='''from kip import *
+
+# %% text t
+"""Ratio @val:r, deflection ratio @val:k, angle @val:theta, share @val:p."""
+
+# %% inputs g
+a = 100 * MPa
+b = 10 * ksi
+d = 1.19 * mm
+E = 68.9 * GPa
+w = 2.5 * kN / m
+
+# %% calc c
+r = a / b
+k = w * (1.8 * m)**4 / (E * (100 * mm)**4 * d)
+theta = 30 * deg
+p = 5 * percent
+''', path="doc.py")
+    text = shown(doc.results["c"])
+    assert "= 1.45\n" in text + "\n" and "ksi" not in text.split("=")[-1]
+    assert "GPa" not in text.splitlines()[1].split("=")[-1]  # k is a plain number
+    assert doc.results["t"].text.count("#text(") == 4
+    for expected in ('"1.45"', '"30°"', '"5 %"'):
+        assert expected in doc.results["t"].text
+
+
+def test_a_name_computed_by_one_cell_cannot_be_bound_again_by_another():
+    """Otherwise later tables and prose show a value different from the one printed."""
+    src = '''from kip import *
+limit = 2
+
+# %% inputs g
+F_ty = 240 * MPa
+
+# %% calc stress
+sigma_allow = F_ty / 1.5       # -> MPa
+
+# %% plot p
+x = [0, 1]
+plot(x, x)
+
+# %% table t
+x = [1, 2]
+Table(["x"], [(v,) for v in x])
+
+# %% calc deflection
+sigma_allow = F_ty / 2         # -> MPa
+
+# %% calc again
+limit = 3
+'''
+    doc = build(source=src, path="doc.py", strict=False)
+    errors = {d.message: d for d in doc.errors}
+    assert set(errors) == {"'sigma_allow' is already defined in cell 'stress' (line 8)",
+                           "'limit' is already defined in the prelude (line 2)"}
+    assert errors["'sigma_allow' is already defined in cell 'stress' (line 8)"].line == 19
+    assert errors["'sigma_allow' is already defined in cell 'stress' (line 8)"].block_id == "deflection"
+    with pytest.raises(ValidationError):
+        build(source=src, path="doc.py")
 
 
 def test_failed_block_does_not_abort_non_strict_build():
@@ -256,16 +320,18 @@ def test_pinned_blocks_survive_auto_layout():
     assert lay.blocks["intro"].x == 99.0 and lay.blocks["intro"].y == 88.0
 
 
-def test_dangling_block_reference_warns_but_still_compiles():
-    """A typo in prose must not fail the whole build.
+def test_dangling_references_are_errors_but_a_draft_still_compiles():
+    """A typo in a reference is an error, not plain text shipped in the PDF.
 
     Typst raises a hard 'label does not exist' error for a dangling link, so
-    unknown @blk: targets degrade to plain text and are reported by kip check.
+    unknown @blk: targets still degrade to plain text when a draft is
+    rendered without strict checking.
     """
     src = '''from kip import *
 
 # %% kip.text id=t
-"""See @blk:nonexistent and @val:missing."""
+"""See @blk:nonexistent and @val:missing.
+Also @val:xx and @blk:g."""
 
 # %% kip.given id=g
 x = 1 * mm
@@ -273,9 +339,45 @@ x = 1 * mm
     doc = build(source=src, path="doc.py", strict=False)
     pdf = compile_pdf(emit(doc, Layout()))
     assert len(pdf) > 0
-    messages = [d.message for d in doc.warnings]
-    assert any("no such block" in m for m in messages)
-    assert any("no defined value" in m for m in messages)
+    found = {d.message: d for d in doc.errors}
+    assert found["@blk:nonexistent refers to no such block"].line == 4
+    assert found["@val:missing refers to no defined value"].line == 4
+    assert found["@val:xx refers to no defined value"].hint == "did you mean @val:x?"
+    assert found["@val:xx refers to no defined value"].line == 5
+    assert len(found) == 3
+    with pytest.raises(ValidationError):
+        build(source=src, path="doc.py")
+
+
+def test_citations_of_unknown_sources_and_requirements_are_errors(tmp_path):
+    src = '''from kip import *
+
+# %% text "Notes"
+"""Per @src:roark and @src:rorak; meets @req:REQ-001 and @req:REQ-009."""
+
+# %% sources refs
+Sources(roark=Source(title="Formulas for Stress and Strain"))
+
+# %% requirements reqs
+Requirements.load()
+'''
+    (tmp_path / "input").mkdir()
+    from kip.sheets import save_workbook
+    from openpyxl import Workbook
+    book = Workbook()
+    book.active.title = "Item"
+    book["Item"].append(["id", "name"])
+    book["Item"].append(["bracket", "Bracket"])
+    book.create_sheet("Inputs").append(["id", "text", "verification"])
+    book["Inputs"].append(["REQ-001", "Carry the load.", "analysis"])
+    save_workbook(book, tmp_path / "input" / "requirements.xlsx")
+    (tmp_path / "doc.py").write_text(src, encoding="utf-8")
+    doc = build(tmp_path / "doc.py", strict=False)
+    found = {d.message: d for d in doc.errors}
+    assert set(found) == {"@src:rorak refers to no reference in this document's sources",
+                          "@req:REQ-009 refers to no loaded requirement"}
+    assert found["@src:rorak refers to no reference in this document's sources"].hint == \
+        "did you mean @src:roark?"
 
 
 def test_scaffolded_project_builds(tmp_path):
@@ -310,7 +412,7 @@ dp_total = dp_clean + dp_cake
     assert "pound" not in text
     # an input reads as written; the substituted value is rounded
     assert '0.4842499437890715 thin "psi"' in text
-    assert '0.484 thin "psi" + 0.411 thin "psi"' in text
+    assert '0.4842 thin "psi" + 0.4115 thin "psi"' in text
 
 
 def test_a_bare_unit_name_in_an_equation_is_a_unit():
