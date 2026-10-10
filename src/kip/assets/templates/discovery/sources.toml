@@ -1,0 +1,54 @@
+[sources.bionemo]
+title = "BioNeMo Agent Toolkit"
+publisher = "NVIDIA"
+year = 2026
+url = "https://github.com/NVIDIA-BioNeMo/bionemo-agent-toolkit"
+note = "drug-discovery-pipeline and protein-binder-design skills"
+
+[sources.genmol]
+title = "GenMol: A Drug Discovery Generalist with Discrete Diffusion"
+author = "S. Lee et al."
+year = 2025
+
+[sources.diffdock]
+title = "DiffDock: Diffusion Steps, Twists, and Turns for Molecular Docking"
+author = "G. Corso et al."
+publisher = "ICLR"
+year = 2023
+
+[sources.boltz2]
+title = "Boltz-2: Towards Accurate and Efficient Binding Affinity Prediction"
+author = "S. Passaro et al."
+publisher = "bioRxiv"
+year = 2025
+
+[sources.rfdiffusion]
+title = "De novo design of protein structure and function with RFdiffusion"
+author = "J. L. Watson et al."
+publisher = "Nature"
+year = 2023
+
+[sources.proteinmpnn]
+title = "Robust deep learning-based protein sequence design using ProteinMPNN"
+author = "J. Dauparas et al."
+publisher = "Science"
+year = 2022
+
+[sources.qed]
+title = "Quantifying the chemical beauty of drugs"
+author = "G. R. Bickerton et al."
+publisher = "Nature Chemistry"
+year = 2012
+
+[sources.lipinski]
+title = "Experimental and computational approaches to estimate solubility and permeability in drug discovery and development settings"
+author = "C. A. Lipinski et al."
+publisher = "Advanced Drug Delivery Reviews"
+year = 1997
+
+[sources.alphafold]
+title = "Highly accurate protein structure prediction with AlphaFold"
+author = "J. Jumper et al."
+publisher = "Nature"
+year = 2021
+note = "pLDDT confidence bands"

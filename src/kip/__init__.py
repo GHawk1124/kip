@@ -6,6 +6,8 @@ __version__ = "0.1.0"
 
 from .api import build_pdf
 from .authoring import run_document, calculation, read_json, read_records
+from .bio import Sequence, Structure, read_a3m, read_fasta, read_vcf, variant_table
+from .chem import Molecule, molecule_grid, molecule_table, read_molecules
 from .content import (
     Column, Drawing, Figure, Series, Source, Sources, Table, linspace, strip_units,
     Symbol, Math, nomenclature, inputs_table, plot,
@@ -30,6 +32,9 @@ __all__ = [
     "Symbol", "Math", "nomenclature", "inputs_table", "plot",
     "build_pdf",
     "run_document", "calculation", "read_records", "read_json",
+    # chemistry and biology
+    "Molecule", "read_molecules", "molecule_table", "molecule_grid",
+    "Sequence", "read_fasta", "read_a3m", "Structure", "read_vcf", "variant_table",
     # spreadsheet inputs
     "Constants", "Constant", "Sheet",
     # requirements and controlled variables

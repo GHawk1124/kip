@@ -108,7 +108,7 @@ def _resolve_doc(path: Path | None) -> Path:
 def new(
     name: str = typer.Argument(..., help="Project directory to create."),
     title: str = typer.Option(None, "--title", "-t", help="Document title."),
-    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, component, or showcase (includes CAD)."),
+    template: str = typer.Option("basic", "--template", "-T", help="basic, requirements, component, showcase (includes CAD), or discovery (chemistry and biology)."),
     columns: int = typer.Option(None, "--columns", "-c", min=1, max=2, help="Default page columns (1 or 2)."),
     source: str = typer.Option(None, "--source", help="kip package path or URL; defaults to this installation's source."),
     no_sync: bool = typer.Option(False, "--no-sync", help="Skip uv sync."),

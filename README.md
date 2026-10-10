@@ -18,6 +18,8 @@ Output goes in `output/`.
 - `kip new name --template requirements` starts a requirements document.
 - `kip new name --template component` starts an engineering packet with standard sheets and visible gaps.
 - `kip new name --template showcase` demonstrates all features, including CAD.
+- `kip new name --template discovery` reports small-molecule triage and a designed
+  protein binder from the files discovery tools write (needs RDKit).
 - `uv run kip check` runs and compiles the document without writing a PDF or
   spreadsheet exports. It prints each problem once as
   `doc.py:LINE: error: [cell] message`, and fails on any error, broken reference,
@@ -304,6 +306,46 @@ Typst errors include the original cell location and compiler diagnostic. Ordinar
 multiline prose maps back to its source line; generated expressions and text whose
 line structure changed point to the authoring cell. The renderer preserves native
 Typst scope while tracking these locations.
+
+## Chemistry and biology
+
+kip reads the files molecule generation, docking, structure prediction, protein
+design and genomics tools write -- including the skills of NVIDIA's BioNeMo Agent
+Toolkit -- and shows them with units and checks like any other calculation.
+`kip new name --template discovery` is a worked hit-triage and binder-design report.
+Molecules use RDKit (`uv add rdkit`, or install `kip[chem]`); sequences, alignments,
+structures and variants need nothing extra.
+
+```python
+hits = read_molecules("input/candidates.csv")      # or DiffDock .sdf, GenMol .json, .smi
+model = Structure.load("input/binder_complex.cif")  # PDB or mmCIF
+lead = hits.get("GM-002")
+
+# %% table candidates "Candidates"
+molecule_table(hits, "qed", "mass", "pic50", passes=lambda m: m.pic50 >= 6)
+
+# %% calc lead_checks "Lead candidate"
+IC50 = 10 ** (-lead.pic50) * molar   # -> nM
+MW = lead.mass                       # -> g/mol
+assert MW <= 500 * g / mol, "Rule of five: mass"
+
+# %% draw complex "Co-folded complex"
+model                                # backbone coloured by pLDDT, with a link to the file
+```
+
+- `read_molecules` keeps every column or SD tag as a property (`m.pic50`), and
+  computes `mass`, `exact_mass`, `logp`, `tpsa`, `qed`, `hbd`, `hba` and
+  `rule_of_five`. A molecule in a draw cell shows its ACS-style structure; in a
+  table cell, its structure at a common scale; `molecule_grid` draws a series.
+- `read_fasta` gives sequences by name with header `key=value` scores; a
+  `Sequence` has `mass`, `gc`, `extinction()`, `translate()`, `identity()` and
+  `mutations()`, and a draw cell shows a numbered listing with marked positions.
+- `Structure` reads chains, sequences, per-residue pLDDT, ligands, interface
+  residues and superposed RMSD. `read_a3m`, `read_vcf` with `variant_table`, and
+  `read_json` (scores with attribute access) cover alignments, variants and
+  model confidence files.
+- Concentrations (`nM`, `uM`, `molar`), masses (`Da`, `kDa`), `angstrom`,
+  `kcal`, `uL` and `ng` are units like any other.
 
 ## Spreadsheet inputs
 

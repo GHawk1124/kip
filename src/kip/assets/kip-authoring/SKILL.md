@@ -1,12 +1,13 @@
 ---
 name: kip-authoring
-description: Create and edit kip engineering documents in Python, including unit-checked calculations, requirements, vector figures, tables, and PDF builds. Use for doc.py projects built with the kip CLI.
+description: Create and edit kip engineering documents in Python, including unit-checked calculations, requirements, vector figures, tables, and PDF builds, with readers for chemistry and biology files. Use for doc.py projects built with the kip CLI.
 ---
 
 Use the existing project's style and requirements. For a new project run
 `kip new folder` (basic), `kip new folder --template requirements` (one object
-with controlled inputs and verification), or `kip new folder --template showcase`
-(all features, including optional build123d CAD). Each creates a uv project,
+with controlled inputs and verification), `kip new folder --template showcase`
+(all features, including optional build123d CAD) or `kip new folder --template
+discovery` (molecules, sequences and structures, with RDKit). Each creates a uv project,
 its input workbooks under input/, and this skill. Add dependencies with
 `uv add` from that folder. `kip migrate` converts an older project's
 requirements.toml and sources.toml into input/ workbooks.
@@ -257,6 +258,52 @@ generated expressions point to the cell.
   same table block as `matrix = compliance_matrix(reqs)`. Use
   `variables_table(reqs)` for controlled symbols and `requirements_table(reqs)`
   for the requirement listing. Do not invent evidence or material allowables.
+
+## Chemistry and biology
+
+kip reads what molecule generation, docking, structure prediction, protein
+design and genomics tools write -- the NVIDIA BioNeMo Agent Toolkit's skills
+among them -- and shows it with units and checks. `kip new folder --template
+discovery` is the worked example. Molecules need RDKit (`uv add rdkit`);
+everything else needs nothing extra.
+
+- `read_molecules(path)` reads SDF/MOL (DiffDock poses keep their SD tags),
+  `.smi`, CSV/TSV with a SMILES column, or JSON records (GenMol's
+  `{"molecules": [...]}`). Every column or tag is a property: `m.pic50`,
+  `m.docking_confidence` ("Docking confidence" becomes `docking_confidence`).
+  `Molecule("SMILES", name=...)` makes one; `hits.get("GM-002")` finds one.
+- Descriptors: `m.mass` and `m.exact_mass` (g/mol), `m.tpsa` (Å²), `m.logp`,
+  `m.qed`, `m.hbd`, `m.hba`, `m.rotatable_bonds`, `m.rule_of_five` (violations),
+  `m.formula`, `m.smiles`. Read them in a calc cell (`MW = lead.mass  # -> g/mol`)
+  and state verdicts as checks. A file column named like a descriptor (`qed`)
+  is read as `m["qed"]`; `m.qed` is always computed.
+- A draw cell whose last expression is a molecule shows its structure (ACS
+  style, vector); `m.drawing(highlight="c1ccccc1")` marks a substructure;
+  `molecule_grid(mols, labels=lambda m: ..., columns=4)` draws a series to one scale.
+- `molecule_table(mols, "qed", "mass", "pic50", titles={...}, passes=fn)` puts a
+  structure diagram in each row; rows `passes` rejects print in red. A molecule
+  in any `Table` cell is drawn there.
+- `read_fasta(path)` gives sequences by name (`designs["binder_01"]`); header
+  `key=value` pairs (ProteinMPNN's `score=`) are properties. `Sequence` has
+  `length`, `mass` (Da), `gc`, `extinction()`, `translate()`,
+  `reverse_complement()`, `identity(other)` and `mutations(other)` (`["A23G"]`).
+  A draw cell of a sequence shows a numbered listing; `seq.listing(marks={"Interface":
+  [23, 27]})` highlights positions (1-based).
+- `Structure.load("model.cif")` (PDB or mmCIF, first model) gives `chains`,
+  `sequence(chain)`, `residues(chain)`, `plddt(chain)` (0-100, from the B-factor
+  column), `mean_plddt(chain)`, `ligands`, `interface(chain, partner)` and
+  `rmsd(other)` (Å, after superposition). A draw cell of a structure shows its
+  backbone coloured by pLDDT (predicted models) or by chain, bound ligands, and
+  a link to the model file. Plot confidence with
+  `plot(s.residues("B"), s.plddt("B"))`.
+- `read_json(path)` reads score files with attribute access (`scores.iptm`);
+  `read_a3m(path)` gives an MSA's `depth`, `coverage()` and `identity()`;
+  `read_vcf(path)` gives variant records and `variant_table(variants, "DP")`.
+- Units: `molar`, `mM`, `uM`, `nM`, `pM`, `mmol`, `umol`, `nmol`, `Da`, `kDa`,
+  `angstrom`, `nm`, `uL`, `ug`, `ng`, `kcal`. Write conversions as equations:
+  `IC50 = 10 ** (-pIC50) * molar  # -> nM`.
+- Method calls are not calc grammar: compute `model.mean_plddt("B")` in the
+  prelude and check the name in a calc cell. Cite each model with `@src:`.
 
 ## Page layout
 
