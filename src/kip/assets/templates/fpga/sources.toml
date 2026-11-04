@@ -1,0 +1,20 @@
+[sources.icebreaker]
+title = "iCEBreaker FPGA"
+publisher = "1BitSquared"
+url = "https://1bitsquared.com/products/icebreaker"
+note = "iCE40UP5K board with a 12 MHz oscillator and an FTDI serial port"
+
+[sources.ice40up]
+title = "iCE40 UltraPlus Family Data Sheet"
+publisher = "Lattice Semiconductor, FPGA-DS-02008"
+url = "https://www.latticesemi.com/ice40ultraplus"
+
+[sources.yosys]
+title = "Yosys Open SYnthesis Suite"
+author = "C. Wolf"
+url = "https://yosyshq.net/yosys/"
+
+[sources.nextpnr]
+title = "nextpnr: a portable FPGA place and route tool"
+publisher = "YosysHQ"
+url = "https://github.com/YosysHQ/nextpnr"

@@ -9,10 +9,14 @@ from pathlib import Path
 
 import tomlkit
 
-from .resources import SKILL, TEMPLATES
+from .resources import AGENTS, SKILL, TEMPLATES
 
 
-def dependency(source: str | None = None, *, cad: bool = False) -> str:
+#: Optional dependencies a template's document needs.
+EXTRAS = {"showcase": "cad", "discovery": "chem", "circuit": "electronics", "fpga": "electronics"}
+
+
+def dependency(source: str | None = None, *, extra: str | None = None) -> str:
     """Retain a local/VCS installation's source instead of guessing a PyPI release."""
     dist = distribution("kip")
     if source is None:
@@ -25,7 +29,7 @@ def dependency(source: str | None = None, *, cad: bool = False) -> str:
             source += f"#subdirectory={direct['subdirectory']}"
     if source and Path(source).exists():
         source = Path(source).resolve().as_uri()
-    name = "kip[cad]" if cad else "kip"
+    name = f"kip[{extra}]" if extra else "kip"
     return f"{name} @ {source}" if source else f"{name}=={dist.version}"
 
 
@@ -53,10 +57,12 @@ def create_project(root: Path, *, title: str | None = None,
     root = root.resolve()
     slug = re.sub(r"[^a-z0-9]+", "-", root.name.lower()).strip("-") or "document"
     doc_title = title or root.name.replace("-", " ").replace("_", " ").title()
-    requirement = dependency(source, cad=template == "showcase")
+    requirement = dependency(source, extra=EXTRAS.get(template))
     root.mkdir(parents=True, exist_ok=True)
     for file in (TEMPLATES / template).iterdir():
-        if not file.is_file():
+        if file.is_dir():
+            if file.name != "__pycache__":
+                shutil.copytree(file, root / file.name)  # example inputs, as a tool wrote them
             continue
         if file.name == "requirements.toml":
             data = tomllib.loads(file.read_text(encoding="utf-8"))
@@ -81,10 +87,28 @@ def create_project(root: Path, *, title: str | None = None,
     (root / "pyproject.toml").write_text(tomlkit.dumps(pyproject), encoding="utf-8")
     (root / ".python-version").write_text("3.12\n", encoding="utf-8")
     (root / ".gitignore").write_text(".venv/\n__pycache__/\noutput/\n", encoding="utf-8")
-    skill = root / ".agents" / "skills" / "kip-authoring" / "SKILL.md"
-    skill.parent.mkdir(parents=True)
-    skill.write_bytes(SKILL.read_bytes())
+    install_guide(root)
     return sorted(p for p in root.rglob("*") if p.is_file())
+
+
+def install_guide(root: Path) -> list[Path]:
+    """Put the authoring skill where agents look for it, and the working loop beside doc.py.
+
+    Claude Code reads project skills from ``.claude/skills``; other agents use
+    ``.agents/skills``. ``AGENTS.md`` is read by most agents and ``CLAUDE.md``
+    imports it. Existing ``AGENTS.md``/``CLAUDE.md`` files are left alone.
+    """
+    written = []
+    for folder in (".claude", ".agents"):
+        skill = root / folder / "skills" / "kip-authoring" / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_bytes(SKILL.read_bytes())
+        written.append(skill)
+    for name, text in (("AGENTS.md", AGENTS.read_bytes()), ("CLAUDE.md", b"@AGENTS.md\n")):
+        if not (root / name).exists():
+            (root / name).write_bytes(text)
+            written.append(root / name)
+    return written
 
 
 def _page_settings(doc: Path, *, title: str | None, columns: int | None) -> None:

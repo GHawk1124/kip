@@ -1,0 +1,49 @@
+{
+   "creator": "Yosys 0.69 (git sha1 9f75ca1f9, Release, Clang /workspace/YoWASP/yosys/wasi-sdk-33.0-x86_64-linux/share/cmake/../..//bin/clang++ 22.1.0)",
+   "invocation": "stat -json ",
+   "modules": {
+      "\\uart_tx": {
+         "num_wires":         42,
+         "num_wire_bits":     86,
+         "num_pub_wires":     42,
+         "num_pub_wire_bits": 86,
+         "num_ports":         6,
+         "num_port_bits":     13,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         58,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "SB_CARRY": 7,
+            "SB_DFFE": 8,
+            "SB_DFFESR": 11,
+            "SB_DFFESS": 1,
+            "SB_DFFSR": 1,
+            "SB_LUT4": 30
+         }
+      }
+   },
+      "design": {
+         "num_wires":         42,
+         "num_wire_bits":     86,
+         "num_pub_wires":     42,
+         "num_pub_wire_bits": 86,
+         "num_ports":         6,
+         "num_port_bits":     13,
+         "num_memories":      0,
+         "num_memory_bits":   0,
+         "num_processes":     0,
+         "num_cells":         58,
+         "num_submodules":       0,
+         "num_cells_by_type": {
+            "SB_CARRY": 7,
+            "SB_DFFE": 8,
+            "SB_DFFESR": 11,
+            "SB_DFFESS": 1,
+            "SB_DFFSR": 1,
+            "SB_LUT4": 30
+         }
+      }
+}
+

@@ -5,7 +5,7 @@ from openpyxl import Workbook
 from kip import Constants, Sheet, Sources, calculation, mm, ureg
 from kip.doc import build
 from kip.doc.kernel import ExecutionError
-from kip.units import fmt_quantity
+from kip.units import fmt_number, fmt_quantity
 
 
 def workbook(tmp_path, name, headers, rows):
@@ -238,6 +238,20 @@ def test_fmt_quantity_does_not_pad_or_lose_digits():
     assert fmt_quantity(650.0 * ureg.psi) == "650 psi"
     assert fmt_quantity(0.000979 * ureg.Pa) == "0.000979 Pa"
     assert fmt_quantity(997.99 * ureg.kg) == "997.99 kg"
+
+
+@pytest.mark.parametrize("value,text", [
+    (12.168975, "12.17"), (1.0126984, "1.013"), (0.15873016, "0.1587"), (7.5, "7.5"), (160.0, "160"),
+    (83333.333, "83333"), (0.0025, "0.0025"), (4.16666667e6, "4.167×10⁶"), (999999.99, "1000000"),
+    (997.99, "997.99"), (999996.0, "999996"), (0.4842499437890715, "0.4842"), (0.0759375, "0.07594"),
+    (9999999.9, "1×10⁷"), (-0.1666666667, "-0.1667"), (2.5e-5, "2.5×10⁻⁵"), (0.0, "0"),
+])
+def test_computed_values_show_four_significant_figures_and_typed_ones_in_full(value, text):
+    assert fmt_number(value) == text
+
+
+def test_an_explicit_precision_is_exact():
+    assert fmt_number(997.99, 3) == "998" and fmt_number(0.4115, 2) == "0.41"
 
 
 # generated workbooks

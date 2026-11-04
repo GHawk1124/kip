@@ -14,7 +14,7 @@ from .layout import Layout
 from .diagnostics import RenderError
 
 __all__ = [
-    "compile_pdf", "compile_svg", "block_geometry", "BlockGeometry",
+    "compile_pdf", "compile_svg", "block_geometry", "BlockGeometry", "layout_markers",
     "render", "vendor_dir", "export_assets", "measure_heights",
     "PACKAGE_DIR", "FONT_DIR",
 ]
@@ -106,6 +106,24 @@ def block_geometry(files: dict[str, bytes]) -> list[BlockGeometry]:
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+def layout_markers(files: dict[str, bytes]) -> list[dict]:
+    """Block starts and ends, and equations drawn below full size, in one query.
+
+    The query lays the document out completely, so it also reports every
+    compile error ``compile_pdf`` would, without producing a PDF.
+    """
+    try:
+        raw = typst.query(files, "selector(<kipblk>).or(<kiplayout>)", field="value",
+                          **_common_kwargs())
+    except (typst.TypstError, RuntimeError) as exc:
+        # A failed query carries no structured diagnostic; compiling recovers
+        # the cell and line the error belongs to.
+        compile_pdf(files)
+        raise RenderError(exc, files) from exc
+    data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    return [item for item in data if isinstance(item, dict)]
 
 
 def block_heights(geoms: list[BlockGeometry], page_height: float) -> dict[str, float]:

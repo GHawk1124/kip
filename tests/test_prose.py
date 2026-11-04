@@ -22,6 +22,47 @@ def spans(pdf):
             for line in b.get("lines", []) for s in line["spans"]]
 
 
+@pytest.mark.parametrize("prose", [
+    "Use bolt #4 per drawing.",
+    "Heat sink #2B, item # 4 and C# notes.",
+    "See drawing <A-1> for the detail.",
+    "Tolerance <0.5 mm; ratio <1; value >5 and <10.",
+    "Questions to j.smith@acme.com or email@example.org.",
+    "The part costs $45 to make.",
+    "Costs $45 and $50 for two parts.",
+    "The ~5 mm gap.",
+    "Path C:\\temp\\x here.",
+    "Use 8 * bolt * 2 rows.",
+    "Load * factor.",
+    "Keep a _ gap and x ** 2 here.",
+])
+def test_everyday_characters_in_prose_print_as_written(prose):
+    """Typst would read these as code, labels, references, math or spacing,
+    and fail the build or drop the characters without a word."""
+    text = unicodedata.normalize("NFKC", "".join(p.get_text() for p in render(prose)))
+    assert prose in " ".join(text.split())
+
+
+def test_deliberate_markup_still_works_beside_escaped_characters():
+    prose = ('#strong[costs $45] and Fig.~3; $a < b$ is math, \\#4 is escaped.\n\n'
+             '## Results <res>\n\nSee @res; mass $m = 5$ kg for $10.')
+    pdf = render(prose)
+    text = " ".join(unicodedata.normalize("NFKC", "".join(p.get_text() for p in pdf)).split())
+    assert "costs $45 and Fig. 3;" in text and "#4 is escaped" in text
+    assert "Results See Section" in text and "kg for $10." in text
+    bold = [s for s in spans(pdf) if s["flags"] & 16]
+    assert any("costs $45" in s["text"] for s in bold)
+
+
+def test_markdown_bullets_and_double_asterisks_mean_what_they_do_in_markdown():
+    pdf = render("**Note:** the load is *factored*.\n\n* First item\n* Second item")
+    bold = {s["text"].strip() for s in spans(pdf) if s["flags"] & 16}
+    assert "Note:" in bold and "factored" in bold
+    text = unicodedata.normalize("NFKC", "".join(p.get_text() for p in pdf))
+    assert "*" not in text and "First item" in text and "Second item" in text
+    assert "•" in text  # a list bullet
+
+
 def test_native_typst_is_not_rewritten_as_markdown_headings():
     prose = '''#set text(fill: rgb("#123a6b"))
 #let word = [Native code]
@@ -149,7 +190,7 @@ def test_paragraph_with_inline_fractions_can_split_without_overlapping_next_para
     next_page,start = next((i,w) for i,w in words if w[4] == "SECONDSTART.")
     assert end_page == next_page
     assert start[1] > end[3]  # The old fixed-height paragraph put both on the same line.
-    assert start[1]-end[1] == pytest.approx(5*72/25.4, abs=.02)
+    assert start[1]-end[1] == pytest.approx(2*5*72/25.4, abs=.02)  # one blank row between
 
 
 def test_repeated_table_headers_do_not_compress_final_rows():

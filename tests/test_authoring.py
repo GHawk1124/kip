@@ -184,6 +184,9 @@ def test_generated_project_builds_from_another_working_directory(tmp_path, monke
     project = tomllib.loads((root / "pyproject.toml").read_text())
     assert project["project"]["description"] == 'A "quoted" title'
     assert (root / ".agents/skills/kip-authoring/SKILL.md").exists()
+    assert (root / ".claude/skills/kip-authoring/SKILL.md").exists()
+    assert "uv run kip check" in (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert (root / "CLAUDE.md").read_text(encoding="utf-8") == "@AGENTS.md\n"
     monkeypatch.chdir(tmp_path)
     output = build_pdf(root)
     assert output.parent == root / "output"
@@ -206,6 +209,18 @@ def test_cli_skill_export_and_project_protection(tmp_path):
     existing.write_text("keep me")
     assert runner.invoke(app, ["new", str(existing), "--no-sync"]).exit_code == 1
     assert existing.read_text() == "keep me"
+
+
+def test_skill_install_refreshes_an_existing_project_and_keeps_its_notes(tmp_path):
+    (tmp_path / ".agents/skills/kip-authoring").mkdir(parents=True)
+    (tmp_path / ".agents/skills/kip-authoring/SKILL.md").write_text("old guide")
+    (tmp_path / "AGENTS.md").write_text("team notes")
+    assert CliRunner().invoke(app, ["skill", "--install", str(tmp_path)]).exit_code == 0
+    current = (Path(__file__).parents[1] / "src/kip/assets/kip-authoring/SKILL.md").read_bytes()
+    for folder in (".agents", ".claude"):
+        assert (tmp_path / folder / "skills/kip-authoring/SKILL.md").read_bytes() == current
+    assert (tmp_path / "AGENTS.md").read_text() == "team notes"
+    assert (tmp_path / "CLAUDE.md").read_text() == "@AGENTS.md\n"
 
 
 def test_preview_builds_before_opening(tmp_path, monkeypatch):

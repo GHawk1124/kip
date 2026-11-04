@@ -33,6 +33,38 @@ def read_records(path, sheet="Inputs"):
         book.close()
 
 
+class Record(dict):
+    """A JSON object whose keys read as attributes, so a calc cell can write
+    ``scores.iptm``; nested objects are records too."""
+
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(f"no {key!r} in this record; it has {', '.join(self)}") from None
+
+
+def _record(value):
+    if isinstance(value, dict):
+        return Record({k: _record(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return [_record(v) for v in value]
+    return value
+
+
+def read_json(path):
+    """A JSON file -- model scores, run parameters -- with attribute access.
+
+    ``scores = read_json("input/confidence.json")`` then ``scores.iptm``.
+    """
+    import json
+    path = project_path(path)
+    try:
+        return _record(json.loads(path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}:{exc.lineno}: not valid JSON: {exc.msg}") from None
+
+
 @dataclass
 class Report:
     page: dict = field(default_factory=dict)
@@ -52,8 +84,17 @@ def run_document(path, *, prepare=None, output=None, **page):
     if inspect.currentframe().f_back.f_globals.get("__name__") == "__main__":
         if prepare is not None:
             prepare()
-        from .api import build_pdf
-        print(build_pdf(path, output))
+        # The same build and report as `kip build`: warnings, failed checks and
+        # errors with their file:line, and a non-zero exit when it fails.
+        import typer
+        from .cli import build
+        doc = Path(path)
+        if doc.is_relative_to(Path.cwd()):
+            doc = doc.relative_to(Path.cwd())  # report doc.py:12, as kip build does
+        try:
+            build(doc, Path(output) if output else None, None, False, False)
+        except typer.Exit as exc:
+            raise SystemExit(exc.exit_code) from None
         raise SystemExit(0)
     return report
 
@@ -63,9 +104,13 @@ class Calculation:
     source: str
     values: dict
     units: dict
-    precision: int = 3
+    precision: int | None = None
     input_entries: list = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    #: (file, line) where the rendered equations start, for check failures
+    origin: tuple = ("", 1)
+    #: Module-level names the equations read (pi, units, constants), for rendering them
+    constants: dict = field(default_factory=dict)
 
     @property
     def symbols(self):
@@ -124,7 +169,12 @@ def _unit_misuse(fn, tree, first_line, path):
     return out
 
 
-def calculation(fn=None, *, units=None, precision=3):
+#: The code of every @calculation function, so a unit error raised inside one
+#: can be explained in terms of its own equations.
+calculation_code: set = set()
+
+
+def calculation(fn=None, *, units=None, precision=None):
     """Render a function's equations and expose its computed local values.
 
     Set up inputs before ``# equations`` and write straight-line arithmetic
@@ -153,6 +203,7 @@ def calculation(fn=None, *, units=None, precision=3):
         signature = inspect.signature(fn)
         equations, annotated = display_units(raw)
         conversions = annotated + list((units or {}).items())
+        used_names = {n.id for n in ast.walk(ast.parse(equations)) if isinstance(n, ast.Name)}
 
         from .doc.blocks import Block
         from .doc.validate import validate_all, ValidationError
@@ -167,14 +218,17 @@ def calculation(fn=None, *, units=None, precision=3):
             raise ValidationError(errors, path)
 
         inner = fn
-        if not returns or annotated:
+        from .math.calc import has_checks, strip_checks, with_conversions
+        checked = has_checks(ast.parse(equations).body)
+        if not returns or annotated or checked:
             # Rewriting the tail is what lets the author stop writing it, and
             # each annotated result is converted before the next line uses it.
-            from .math.calc import with_conversions
+            # A check in the equations is shown, not raised.
             function.decorator_list = []
             if returns:
                 function.body.pop()
             with_conversions(function.body, annotated)
+            strip_checks(function.body, after=start)
             function.body.append(ast.Return(ast.Call(
                 func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[])))
             module = ast.fix_missing_locations(
@@ -184,6 +238,7 @@ def calculation(fn=None, *, units=None, precision=3):
             exec(compile(module, path or "<calculation>", "exec"),
                  fn.__globals__, scope)
             inner = scope[function.name]
+        calculation_code.add(inner.__code__)
 
         @wraps(fn)
         def wrapped(*args, **kwargs):
@@ -206,7 +261,10 @@ def calculation(fn=None, *, units=None, precision=3):
                         f"cannot be displayed in {unit}") from exc
             inputs.extend(item for _, item in reads)
             metadata = symbol_entries(full_source, values, reads)
-            return Calculation(equations, values, dict(conversions), precision, inputs, metadata)
+            constants = {name: fn.__globals__[name] for name in used_names
+                         if name not in values and name in fn.__globals__}
+            return Calculation(equations, values, dict(conversions), precision, inputs, metadata,
+                               origin=(path or "", body_start), constants=constants)
         return wrapped
 
     return decorate(fn) if fn is not None else decorate

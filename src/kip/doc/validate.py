@@ -66,7 +66,7 @@ def validate_block(block: Block, path: str | Path = "doc.py") -> list[Diagnostic
         return []  # an @calculation validates its own equations
     return [Diagnostic("error", block.id, offset + getattr(node, "lineno", 1),
                        f"{message} in a {block.kind} cell", hint)
-            for node, message, hint in check_calc(tree)]
+            for node, message, hint in check_calc(tree, checks=block.kind == "calc")]
 
 
 def validate_all(blocks: list[Block], path: str | Path = "doc.py") -> list[Diagnostic]:
