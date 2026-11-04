@@ -1,0 +1,10 @@
+{
+  "components": 7,
+  "interferences": 0,
+  "valid_solids": true,
+  "housing_volume_mm3": 27870.807615688118,
+  "independent_volume_mm3": 27870.807615688085,
+  "stub_od_in": 0.25,
+  "stub_wall_in": 0.025,
+  "stub_id_in": 0.2
+}

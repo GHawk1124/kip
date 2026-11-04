@@ -1,0 +1,39 @@
+[item]
+id = "F200-COMP-001"
+name = "Fluid filter"
+revision = "A"
+
+[req.F-01]
+text = "Operate at MEOP without leakage."
+verification = "test"
+[req.F-02]
+text = "Withstand proof pressure without leakage or unacceptable permanent deformation."
+verification = "test"
+[req.F-03]
+text = "Withstand the specified minimum burst pressure."
+verification = "test"
+[req.F-04]
+text = "Meet the selected filtration rating and particle retention efficiency."
+verification = "test"
+[req.F-05]
+text = "Meet clean pressure-drop limit at nominal flow; characterize surge flow."
+verification = "test"
+note = "Finished-pack and housing calibration OPEN."
+[req.F-06]
+text = "Retain specified dirt mass within loaded pressure-drop limit at nominal flow."
+verification = "test"
+note = "Loading and retention test evidence OPEN."
+[req.F-07]
+text = "Meet dry assembly mass limit."
+verification = "test"
+note = "CAD estimate available; finished mass and cloth areal weights OPEN."
+[req.F-08]
+text = "Approve compatibility and cleanliness for the selected fluid and operating state."
+verification = "inspection"
+[req.F-09]
+text = "Demonstrate media and support integrity at blocked-screen differential."
+verification = "test"
+note = "Required differential and support capacity OPEN."
+[req.F-10]
+text = "Use the seven-component architecture."
+verification = "inspection"

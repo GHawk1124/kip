@@ -1,0 +1,4 @@
+# Change this identity and update rho, mu and temperature_F in design.xlsx.
+name = "Water (reference example)"
+phase = "liquid"
+property_basis = "Ambient-pressure properties at 70 F inherited from F100; operating-pressure correction OPEN."
